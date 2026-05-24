@@ -1,0 +1,10 @@
+{
+  "_comment": "Add this block to your Claude Code MCP settings. Replace the URL with your fleet-memory server address.",
+  "mcpServers": {
+    "memory-mcp": {
+      "type": "http",
+      "url": "http://127.0.0.1:8800/mcp",
+      "_note": "Change 127.0.0.1 to your server's LAN IP if running remotely"
+    }
+  }
+}

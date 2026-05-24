@@ -1,0 +1,32 @@
+[Unit]
+Description=memory-mcp - shared fleet-memory MCP server (mem0)
+After=network-online.target qdrant.service
+Wants=network-online.target
+Requires=qdrant.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/memory-mcp
+Environment=QDRANT_HOST=127.0.0.1
+Environment=QDRANT_PORT=6333
+Environment=MEM0_COLLECTION=local_ai_cross_agent_memory
+Environment=MEM0_HISTORY_DB=/opt/memory-mcp/history.db
+Environment=MEM0_NAMESPACE=fleet
+Environment=MCP_HOST=0.0.0.0
+Environment=MCP_PORT=8800
+Environment=FASTMCP_HOST=0.0.0.0
+Environment=FASTMCP_PORT=8800
+Environment=LLM_TEXTFILE_METRIC=/var/lib/node_exporter/textfile_collector/memory_mcp.prom
+# LLM_PROVIDER: openai (default) or ollama
+# For openai: OPENAI_API_KEY injected by run.sh from Vault (or set directly here for standalone)
+# For ollama: set LLM_PROVIDER=ollama and OLLAMA_URL=http://<host>:11434
+Environment=LLM_PROVIDER=openai
+Environment=MEM0_LLM_MODEL=gpt-4o-mini
+Environment=MEM0_EMBED_MODEL=text-embedding-3-small
+ExecStart=/opt/memory-mcp/run.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

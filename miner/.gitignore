@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+checkpoint.json
+checkpoint_test.json
+miner.log
+test_heavy.log
+test_heavy2.log
+test_content.log
+test_run.log
+test_run_err.log

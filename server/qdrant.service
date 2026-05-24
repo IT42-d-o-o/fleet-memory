@@ -1,0 +1,16 @@
+[Unit]
+Description=Qdrant vector database (memory-mcp backing store)
+After=network.target
+
+[Service]
+Type=simple
+User=qdrant
+Group=qdrant
+WorkingDirectory=/opt/qdrant
+ExecStart=/opt/qdrant/bin/qdrant --config-path /opt/qdrant/config/config.yaml
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

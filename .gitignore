@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+checkpoint.json
+checkpoint_*.json
+*.log
+*.err
+venv/
+.venv/
