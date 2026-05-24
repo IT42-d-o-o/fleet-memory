@@ -33,7 +33,7 @@ CODEX_SESSIONS_ROOT = Path.home() / ".codex" / "sessions"
 CHECKPOINT_FILE = Path(__file__).parent / "checkpoint.json"
 LOG_FILE = Path(__file__).parent / "miner.log"
 
-FLEET_MEMORY_URL = os.getenv("FLEET_MEMORY_URL", "http://127.0.0.1:8800/mcp")
+FLEET_MEMORY_URL = os.getenv("FLEET_MEMORY_URL", "http://192.168.50.138:8800/mcp")
 DEFAULT_MODEL = "qwen3-coder:30b"
 
 # Markdown mining — project repos (override with --markdown-roots or MARKDOWN_ROOTS env)
@@ -605,27 +605,32 @@ def add_to_fleet_memory(content: str, category: str, dry_run: bool) -> bool:
             }
         }
     }
-    try:
-        with _mem_write_sem:
-            resp = httpx.post(
-                FLEET_MEMORY_URL,
-                json=payload,
-                headers={
-                    "Content-Type": "application/json",
-                    "Accept": "application/json, text/event-stream"
-                },
-                timeout=60
-            )
-        resp.raise_for_status()
-        body = resp.json()
-        if body.get("result", {}).get("isError"):
-            err = body["result"].get("content", [{}])[0].get("text", "unknown")
-            log(f"  fleet memory write error: {err[:120]}")
-            return False
-        return True
-    except Exception as e:
-        log(f"  fleet memory write error: {e}")
-        return False
+    for attempt in range(3):
+        try:
+            with _mem_write_sem:
+                resp = httpx.post(
+                    FLEET_MEMORY_URL,
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    timeout=60
+                )
+            resp.raise_for_status()
+            body = resp.json()
+            if body.get("result", {}).get("isError"):
+                err = body["result"].get("content", [{}])[0].get("text", "unknown")
+                log(f"  fleet memory write error: {err[:120]}")
+                return False
+            return True
+        except Exception as e:
+            if attempt < 2:
+                time.sleep(8 * (attempt + 1))
+            else:
+                log(f"  fleet memory write error (gave up after 3 attempts): {e}")
+                return False
+    return False
 
 
 def find_all_transcripts(since: datetime | None, skip_subagents: bool = False) -> list[tuple[Path, str]]:
