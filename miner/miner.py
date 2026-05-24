@@ -33,14 +33,16 @@ CODEX_SESSIONS_ROOT = Path.home() / ".codex" / "sessions"
 CHECKPOINT_FILE = Path(__file__).parent / "checkpoint.json"
 LOG_FILE = Path(__file__).parent / "miner.log"
 
-FLEET_MEMORY_URL = "http://192.168.50.138:8800/mcp"
+FLEET_MEMORY_URL = os.getenv("FLEET_MEMORY_URL", "http://127.0.0.1:8800/mcp")
 DEFAULT_MODEL = "qwen3-coder:30b"
 
-# Markdown mining — project repos
-MARKDOWN_ROOTS_DEFAULT = [
-    Path(r"C:\Users\tomis\Projects\ai"),
-    Path(r"C:\Users\tomis\Projects\repos"),
-]
+# Markdown mining — project repos (override with --markdown-roots or MARKDOWN_ROOTS env)
+_default_projects = os.getenv("PROJECTS_ROOT")
+MARKDOWN_ROOTS_DEFAULT = (
+    [Path(_default_projects)]
+    if _default_projects
+    else [Path(r"C:\Users\tomis\Projects\ai"), Path(r"C:\Users\tomis\Projects\repos")]
+)
 # Root-level files to include from each repo
 MARKDOWN_ROOT_FILES = {"CLAUDE.md", "AGENTS.md", "METHODOLOGY.md", "IDENTITY.md"}
 # Subdirectory globs (relative to repo root, one level deep)
@@ -59,7 +61,7 @@ GIT_ROOTS_DEFAULT = [
 GIT_SKIP_SUBJECTS = {"merge branch", "merge pull request", "initial commit", "wip", "update readme"}
 
 # Gitea issue mining
-GITEA_URL = "http://192.168.50.135:3000"
+GITEA_URL = os.getenv("GITEA_URL", "http://192.168.50.135:3000")
 GITEA_ORGS_DEFAULT = ["ai", "repos"]
 GITEA_SKIP_REPOS: set[str] = set()
 
@@ -382,7 +384,7 @@ def gitea_get_credentials() -> tuple[str, str]:
     try:
         result = subprocess.run(
             ["git", "credential", "fill"],
-            input="protocol=http\nhost=192.168.50.135:3000\n\n",
+            input=f"protocol=http\nhost={GITEA_URL.split('://')[-1]}\n\n",
             capture_output=True, text=True, timeout=10
         )
         user, pw = "", ""
