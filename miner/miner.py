@@ -705,6 +705,7 @@ def main():
     parser.add_argument("--since", help="Only process files newer than YYYY-MM-DD")
     parser.add_argument("--limit", type=int, help="Max files to process this run")
     parser.add_argument("--skip-subagents", action="store_true", help="Skip files inside subagents/ subdirectories")
+    parser.add_argument("--no-transcripts", action="store_true", help="Skip transcript processing (run only --git/--gitea sources)")
     parser.add_argument("--workers", type=int, default=1, help="Parallel worker threads (default: 1)")
     parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Ollama model (default: {DEFAULT_MODEL})")
     parser.add_argument("--checkpoint", help="Custom checkpoint file path (default: checkpoint.json)")
@@ -730,7 +731,7 @@ def main():
     cp = load_checkpoint()
     cp_lock = threading.Lock()
 
-    all_files = find_all_transcripts(since, skip_subagents=args.skip_subagents)
+    all_files = [] if args.no_transcripts else find_all_transcripts(since, skip_subagents=args.skip_subagents)
     md_files = []
     git_repos = []
     if args.markdown:
