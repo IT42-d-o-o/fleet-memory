@@ -58,7 +58,7 @@ echo ""
 echo "Example (run manually after reviewing):"
 echo "  cd $MINER_DIR"
 echo "  pip install it42ai httpx"
-echo "  python miner.py --transcripts ~/.claude/transcripts --workers 4"
+echo "  python miner.py --workers 4"
 echo ""
 
 # --- 4. Print MCP config snippet -------------------------------------------

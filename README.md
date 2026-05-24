@@ -66,7 +66,7 @@ Add `onboarding/claude-md-snippet.md` content to your `CLAUDE.md`.
 ```bash
 cd miner/
 pip install httpx it42ai
-python miner.py --transcripts ~/.claude/projects --workers 4
+python miner.py --workers 4
 ```
 
 See `docs/backfill.md` for all options.

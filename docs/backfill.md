@@ -16,16 +16,12 @@ The miner (`miner/miner.py`) ingests existing content into fleet-memory.
 cd miner/
 pip install httpx it42ai  # or: pip install -r requirements.txt
 
-# Claude transcripts only (fastest first run):
-python miner.py \
-  --transcripts ~/.claude/projects \
-  --fleet-url http://127.0.0.1:8800/mcp \
-  --workers 4
+# Claude transcripts only (fastest first run — default mode, no flag needed):
+python miner.py --workers 4
 
 # Add git repos:
 python miner.py \
-  --transcripts ~/.claude/projects \
-  --git-roots ~/Projects \
+  --git --git-roots ~/Projects \
   --workers 4
 
 # Add Gitea (requires GITEA_URL env + git credential store):
