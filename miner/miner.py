@@ -500,28 +500,63 @@ def gitea_fetch_issues(org: str, repo: str, creds: tuple[str, str]) -> str:
     return "\n".join(parts).strip()
 
 
-def process_gitea_repo(
-    org: str, repo: str, creds: tuple[str, str],
-    known_hash: str | None, dry_run: bool, model: str
-) -> tuple[int, dict | None]:
-    fhash = gitea_repo_fingerprint(org, repo, creds)
-    if known_hash == fhash:
-        return -1, None
+def gitea_fetch_commits(org: str, repo: str, creds: tuple[str, str], max_commits: int = 200) -> str:
+    """Fetch recent commit messages from Gitea API, return formatted text block."""
+    user, pw = creds
+    parts = []
+    page = 1
+    fetched = 0
 
-    text = gitea_fetch_issues(org, repo, creds)
-    if len(text) < 200:
-        return 0, {"file_hash": fhash, "facts_written": 0, "skipped": True}
+    while fetched < max_commits:
+        try:
+            resp = httpx.get(
+                f"{GITEA_URL}/api/v1/repos/{org}/{repo}/commits",
+                params={"limit": 50, "page": page},
+                auth=(user, pw), timeout=30
+            )
+            if resp.status_code != 200:
+                break
+            commits = resp.json()
+            if not commits:
+                break
+            for c in commits:
+                sha = c.get("sha", "")[:8]
+                msg = (c.get("commit", {}).get("message") or "").strip()
+                author = c.get("commit", {}).get("author", {}).get("name", "")
+                date = (c.get("commit", {}).get("author", {}).get("date") or "")[:10]
+                if not msg or len(msg) < 10:
+                    continue
+                # skip noisy auto-generated commits
+                first_line = msg.split("\n")[0].lower()
+                if any(first_line.startswith(p) for p in GIT_SKIP_SUBJECTS):
+                    continue
+                parts.append(f"COMMIT {sha} by {author} on {date}:\n{msg[:600]}")
+                parts.append("")
+            fetched += len(commits)
+            if len(commits) < 50:
+                break
+            page += 1
+        except Exception as e:
+            log(f"  gitea commits error {org}/{repo}: {e}")
+            break
 
+    return "\n".join(parts).strip()
+
+
+def _extract_and_write(
+    text: str, system_prompt: str, model: str, dry_run: bool,
+    label: str
+) -> int:
+    """Chunk text, extract facts via LLM, write to fleet memory. Returns facts written."""
     chunks = chunk_text(text)
     facts_written = 0
     total_chunks = len(chunks)
-
     for batch_start in range(0, total_chunks, BATCH_SIZE):
         batch = chunks[batch_start:batch_start + BATCH_SIZE]
         batch_end = min(batch_start + BATCH_SIZE, total_chunks)
-        log(f"  chunks {batch_start+1}-{batch_end}/{total_chunks} ({sum(len(c) for c in batch)} chars) → ollama [{model}]")
-        items = call_ollama(batch, model, system=GITEA_SYSTEM_PROMPT)
-        log(f"  extracted {len(items)} items")
+        log(f"  [{label}] chunks {batch_start+1}-{batch_end}/{total_chunks} ({sum(len(c) for c in batch)} chars) → ollama [{model}]")
+        items = call_ollama(batch, model, system=system_prompt)
+        log(f"  [{label}] extracted {len(items)} items")
         for item in items:
             cat = item.get("category", "fact").lower()
             content = item.get("content", "").strip()
@@ -530,6 +565,29 @@ def process_gitea_repo(
             if add_to_fleet_memory(content, cat, dry_run):
                 facts_written += 1
             time.sleep(0.1)
+    return facts_written
+
+
+def process_gitea_repo(
+    org: str, repo: str, creds: tuple[str, str],
+    known_hash: str | None, dry_run: bool, model: str
+) -> tuple[int, dict | None]:
+    fhash = gitea_repo_fingerprint(org, repo, creds)
+    if known_hash == fhash:
+        return -1, None
+
+    facts_written = 0
+
+    issues_text = gitea_fetch_issues(org, repo, creds)
+    if len(issues_text) >= 200:
+        facts_written += _extract_and_write(issues_text, GITEA_SYSTEM_PROMPT, model, dry_run, "issues")
+
+    commits_text = gitea_fetch_commits(org, repo, creds)
+    if len(commits_text) >= 200:
+        facts_written += _extract_and_write(commits_text, GIT_SYSTEM_PROMPT, model, dry_run, "commits")
+
+    if facts_written == 0:
+        return 0, {"file_hash": fhash, "facts_written": 0, "skipped": True}
 
     return facts_written, {
         "file_hash": fhash,
