@@ -319,17 +319,23 @@ class GiteaForgeClient(ForgeClient):
 
     def list_repos(self) -> list[tuple[str, str]]:
         results: list[tuple[str, str]] = []
-        for org in self.orgs:
+        if self.orgs:
+            targets = [(f"/api/v1/orgs/{org}/repos", org) for org in self.orgs]
+        else:
+            targets = [("/api/v1/repos/search", None)]
+        for path, org_label in targets:
             page = 1
             while True:
-                resp = self._get(f"/api/v1/orgs/{org}/repos", {"limit": 50, "page": page})
+                resp = self._get(path, {"limit": 50, "page": page})
                 if resp.status_code != 200:
                     break
-                repos = resp.json()
+                data = resp.json()
+                repos = data.get("data", data) if isinstance(data, dict) else data
                 if not repos:
                     break
                 for r in repos:
-                    results.append((org, r["name"]))
+                    owner = r.get("owner", {}).get("login", org_label or "")
+                    results.append((owner, r["name"]))
                 if len(repos) < 50:
                     break
                 page += 1
