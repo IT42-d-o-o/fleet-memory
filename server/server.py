@@ -42,19 +42,39 @@ TELEMETRY_FILE = os.environ.get(
     "/var/lib/node_exporter/textfile_collector/memory_mcp.prom",
 )
 
-_qdrant_cfg = {"collection_name": COLLECTION, "host": QDRANT_HOST, "port": QDRANT_PORT}
+_EMBED_DIMS = {
+    "text-embedding-3-small": 1536,
+    "text-embedding-3-large": 3072,
+    "text-embedding-ada-002": 1536,
+    "nomic-embed-text": 768,
+    "BAAI/bge-small-en-v1.5": 384,
+    "BAAI/bge-base-en-v1.5": 768,
+    "BAAI/bge-large-en-v1.5": 1024,
+}
 
 
-def _openai_embedder(api_key: str, model: str = "text-embedding-3-small") -> dict:
-    return {"provider": "openai", "config": {"model": model, "api_key": api_key}}
+def _qdrant_cfg(dims: int) -> dict:
+    return {
+        "collection_name": COLLECTION,
+        "host": QDRANT_HOST,
+        "port": QDRANT_PORT,
+        "embedding_model_dims": dims,
+    }
 
 
-def _ollama_embedder(url: str, model: str = "nomic-embed-text") -> dict:
-    return {"provider": "ollama", "config": {"model": model, "ollama_base_url": url}}
+def _openai_embedder(api_key: str, model: str = "text-embedding-3-small") -> tuple[dict, int]:
+    dims = _EMBED_DIMS.get(model, 1536)
+    return {"provider": "openai", "config": {"model": model, "api_key": api_key}}, dims
 
 
-def _fastembed_embedder(model: str = "BAAI/bge-small-en-v1.5") -> dict:
-    return {"provider": "fastembed", "config": {"model": model}}
+def _ollama_embedder(url: str, model: str = "nomic-embed-text") -> tuple[dict, int]:
+    dims = _EMBED_DIMS.get(model, 768)
+    return {"provider": "ollama", "config": {"model": model, "ollama_base_url": url}}, dims
+
+
+def _fastembed_embedder(model: str = "BAAI/bge-small-en-v1.5") -> tuple[dict, int]:
+    dims = _EMBED_DIMS.get(model, 384)
+    return {"provider": "fastembed", "config": {"model": model}}, dims
 
 
 if LLM_PROVIDER == "litellm":
@@ -65,25 +85,35 @@ if LLM_PROVIDER == "litellm":
     if not LLM_API_KEY:
         log.error("LLM_API_KEY not set and LLM_PROVIDER=litellm - refusing to start")
         sys.exit(1)
+    # mem0's litellm provider doesn't forward api_key through litellm internals — set env var directly
+    _model_prefix = LLM_MODEL.split("/")[0].lower() if "/" in LLM_MODEL else "openai"
+    _env_map = {"openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY",
+                "openrouter": "OPENROUTER_API_KEY", "together": "TOGETHERAI_API_KEY",
+                "groq": "GROQ_API_KEY", "mistral": "MISTRAL_API_KEY"}
+    _env_var = _env_map.get(_model_prefix, "OPENAI_API_KEY")
+    os.environ.setdefault(_env_var, LLM_API_KEY)
+    log.info("litellm auth: set %s from LLM_API_KEY", _env_var)
+    embedder, embed_dims = _fastembed_embedder()
     mem0_config = {
         "llm": {"provider": "litellm", "config": {"model": LLM_MODEL, "api_key": LLM_API_KEY, "temperature": 0.1}},
-        "embedder": _fastembed_embedder(),
-        "vector_store": {"provider": "qdrant", "config": _qdrant_cfg},
+        "embedder": embedder,
+        "vector_store": {"provider": "qdrant", "config": _qdrant_cfg(embed_dims)},
         "history_db_path": HISTORY_DB,
     }
-    log.info("backend=litellm llm=%s embedder=fastembed(local)", LLM_MODEL)
+    log.info("backend=litellm llm=%s embedder=fastembed(local) dims=%d", LLM_MODEL, embed_dims)
 
 elif LLM_PROVIDER == "ollama":
     OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
     LLM_MODEL = os.environ.get("MEM0_LLM_MODEL", "qwen3:8b")
     EMBED_MODEL = os.environ.get("MEM0_EMBED_MODEL", "nomic-embed-text")
+    embedder, embed_dims = _ollama_embedder(OLLAMA_URL, EMBED_MODEL)
     mem0_config = {
         "llm": {"provider": "ollama", "config": {"model": LLM_MODEL, "ollama_base_url": OLLAMA_URL}},
-        "embedder": _ollama_embedder(OLLAMA_URL, EMBED_MODEL),
-        "vector_store": {"provider": "qdrant", "config": _qdrant_cfg},
+        "embedder": embedder,
+        "vector_store": {"provider": "qdrant", "config": _qdrant_cfg(embed_dims)},
         "history_db_path": HISTORY_DB,
     }
-    log.info("backend=ollama url=%s llm=%s embedder=%s", OLLAMA_URL, LLM_MODEL, EMBED_MODEL)
+    log.info("backend=ollama url=%s llm=%s embedder=%s dims=%d", OLLAMA_URL, LLM_MODEL, EMBED_MODEL, embed_dims)
 
 elif LLM_PROVIDER == "anthropic":
     # Anthropic has no embeddings API — fall back to OpenAI embeddings (if key set) or Ollama.
@@ -93,18 +123,18 @@ elif LLM_PROVIDER == "anthropic":
         sys.exit(1)
     LLM_MODEL = os.environ.get("MEM0_LLM_MODEL", "claude-3-5-haiku-20241022")
     if os.environ.get("OPENAI_API_KEY"):
-        embedder = _openai_embedder(os.environ["OPENAI_API_KEY"])
-        log.info("backend=anthropic llm=%s embedder=openai", LLM_MODEL)
+        embedder, embed_dims = _openai_embedder(os.environ["OPENAI_API_KEY"])
+        log.info("backend=anthropic llm=%s embedder=openai dims=%d", LLM_MODEL, embed_dims)
     elif os.environ.get("OLLAMA_URL"):
-        embedder = _ollama_embedder(os.environ["OLLAMA_URL"])
-        log.info("backend=anthropic llm=%s embedder=ollama", LLM_MODEL)
+        embedder, embed_dims = _ollama_embedder(os.environ["OLLAMA_URL"])
+        log.info("backend=anthropic llm=%s embedder=ollama dims=%d", LLM_MODEL, embed_dims)
     else:
         log.error("LLM_PROVIDER=anthropic requires OPENAI_API_KEY or OLLAMA_URL for embeddings")
         sys.exit(1)
     mem0_config = {
         "llm": {"provider": "anthropic", "config": {"model": LLM_MODEL, "api_key": ANTHROPIC_API_KEY, "temperature": 0.1}},
         "embedder": embedder,
-        "vector_store": {"provider": "qdrant", "config": _qdrant_cfg},
+        "vector_store": {"provider": "qdrant", "config": _qdrant_cfg(embed_dims)},
         "history_db_path": HISTORY_DB,
     }
 
@@ -122,16 +152,16 @@ else:
         llm_cfg["openai_base_url"] = OPENAI_API_BASE
     # OpenRouter has no embeddings endpoint — fall back to Ollama if configured, else use OpenAI
     if OPENAI_API_BASE and os.environ.get("OLLAMA_URL"):
-        embedder = _ollama_embedder(os.environ["OLLAMA_URL"])
-        log.info("backend=openai-compat base=%s llm=%s embedder=ollama", OPENAI_API_BASE, LLM_MODEL)
+        embedder, embed_dims = _ollama_embedder(os.environ["OLLAMA_URL"])
+        log.info("backend=openai-compat base=%s llm=%s embedder=ollama dims=%d", OPENAI_API_BASE, LLM_MODEL, embed_dims)
     else:
-        embedder = _openai_embedder(OPENAI_API_KEY, EMBED_MODEL)
-        log.info("backend=openai%s llm=%s embedder=%s",
-                 f"-compat({OPENAI_API_BASE})" if OPENAI_API_BASE else "", LLM_MODEL, EMBED_MODEL)
+        embedder, embed_dims = _openai_embedder(OPENAI_API_KEY, EMBED_MODEL)
+        log.info("backend=openai%s llm=%s embedder=%s dims=%d",
+                 f"-compat({OPENAI_API_BASE})" if OPENAI_API_BASE else "", LLM_MODEL, EMBED_MODEL, embed_dims)
     mem0_config = {
         "llm": {"provider": "openai", "config": llm_cfg},
         "embedder": embedder,
-        "vector_store": {"provider": "qdrant", "config": _qdrant_cfg},
+        "vector_store": {"provider": "qdrant", "config": _qdrant_cfg(embed_dims)},
         "history_db_path": HISTORY_DB,
     }
 

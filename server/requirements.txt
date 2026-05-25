@@ -6,3 +6,4 @@
 mem0ai
 mcp
 fastembed
+litellm
