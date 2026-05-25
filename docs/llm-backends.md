@@ -44,6 +44,22 @@ export OLLAMA_URL=http://127.0.0.1:11434
 **Quality note**: 8b models miss ~40-60% of facts from terse structured content (git issues, commit
 messages). Use `qwen3:30b` or larger for backfill if quality matters. 8b fine for transcript mining.
 
+## Docker + Ollama
+
+`host.docker.internal` resolves to the host machine in both Docker Desktop (Windows/Mac) and Linux — the compose file wires it via `extra_hosts: host-gateway` automatically.
+
+```bash
+# .env
+LLM_PROVIDER=ollama
+OLLAMA_URL=http://host.docker.internal:11434
+```
+
+Pull required models on the host **before** `docker compose up`:
+```bash
+ollama pull qwen3:8b
+ollama pull nomic-embed-text
+```
+
 ## Miner LLM (separate from server LLM)
 
 The miner (`miner.py`) uses a separate LLM for extraction. Same env vars apply.

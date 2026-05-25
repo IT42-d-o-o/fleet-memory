@@ -19,6 +19,8 @@ services:
     depends_on:
       - qdrant
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   qdrant_data:
