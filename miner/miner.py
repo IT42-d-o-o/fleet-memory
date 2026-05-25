@@ -693,7 +693,7 @@ def add_to_fleet_memory(content: str, category: str, dry_run: bool) -> bool:
                         "Content-Type": "application/json",
                         "Accept": "application/json"
                     },
-                    timeout=60
+                    timeout=180
                 )
             resp.raise_for_status()
             body = resp.json()
