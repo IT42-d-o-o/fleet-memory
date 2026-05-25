@@ -2,12 +2,16 @@
 Transcript miner — extracts facts/decisions/ideas from AI session transcripts
 and project documentation (Markdown) and writes them to fleet memory (mem0).
 
-Sources: Claude Code, Codex, Antigravity, Cursor, OpenClaw, Markdown docs, git logs, Gitea issues.
+Sources: Claude Code, Codex, Antigravity, Cursor, OpenClaw, Markdown docs, git logs,
+         GitHub issues/commits, GitLab issues/commits, Gitea issues/commits.
 
 Resumable: checkpoint.json tracks processed files by path+hash.
 Run: python miner.py [--dry-run] [--since YYYY-MM-DD] [--limit N]
                      [--skip-subagents] [--workers N] [--model NAME]
                      [--markdown] [--markdown-roots PATH [PATH ...]]
+                     [--github] [--github-orgs ORG ...] [--github-url URL]
+                     [--gitlab] [--gitlab-groups GROUP ...] [--gitlab-url URL]
+                     [--gitea] [--gitea-orgs ORG ...]
 """
 
 import argparse
@@ -33,6 +37,7 @@ except ImportError:
     pass
 
 from _llm import create_llm_client, push_tokens
+from _forge import GitHubForgeClient, GitLabForgeClient, GiteaForgeClient, get_gitea_credentials, GIT_SKIP_SUBJECTS
 
 # Force UTF-8 line-buffered stdout on Windows (fixes PowerShell console lag)
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
@@ -69,8 +74,6 @@ GIT_ROOTS_DEFAULT = [
     Path(r"C:\Users\tomis\Projects\ai"),
     Path(r"C:\Users\tomis\Projects\repos"),
 ]
-# Skip commits with subjects matching these prefixes (noisy/auto-generated)
-GIT_SKIP_SUBJECTS = {"merge branch", "merge pull request", "initial commit", "wip", "update readme"}
 
 # Gitea issue mining
 GITEA_URL = os.getenv("GITEA_URL", "http://127.0.0.1:3000")
@@ -499,170 +502,6 @@ def find_git_repos(roots: list[Path]) -> list[tuple[Path, str]]:
     return sorted(results, key=lambda x: x[0].name)
 
 
-def gitea_get_credentials() -> tuple[str, str]:
-    """Read Gitea credentials from git credential store."""
-    try:
-        result = subprocess.run(
-            ["git", "credential", "fill"],
-            input=f"protocol=http\nhost={GITEA_URL.split('://')[-1]}\n\n",
-            capture_output=True, text=True, timeout=10
-        )
-        user, pw = "", ""
-        for line in result.stdout.splitlines():
-            if line.startswith("username="):
-                user = line[9:]
-            elif line.startswith("password="):
-                pw = line[9:]
-        return user, pw
-    except Exception as e:
-        log(f"  gitea credential error: {e}")
-        return "", ""
-
-
-def gitea_list_repos(orgs: list[str], creds: tuple[str, str]) -> list[tuple[str, str]]:
-    """Return (org, repo) pairs for all repos in given orgs."""
-    user, pw = creds
-    results = []
-    for org in orgs:
-        page = 1
-        while True:
-            try:
-                resp = httpx.get(
-                    f"{GITEA_URL}/api/v1/orgs/{org}/repos",
-                    params={"limit": 50, "page": page},
-                    auth=(user, pw), timeout=30
-                )
-                if resp.status_code != 200:
-                    break
-                repos = resp.json()
-                if not repos:
-                    break
-                for r in repos:
-                    name = r["name"]
-                    if name not in GITEA_SKIP_REPOS:
-                        results.append((org, name))
-                if len(repos) < 50:
-                    break
-                page += 1
-            except Exception as e:
-                log(f"  gitea list error {org}: {e}")
-                break
-    return results
-
-
-def gitea_repo_fingerprint(org: str, repo: str, creds: tuple[str, str]) -> str:
-    """Return repo updated_at as change fingerprint."""
-    user, pw = creds
-    try:
-        resp = httpx.get(f"{GITEA_URL}/api/v1/repos/{org}/{repo}", auth=(user, pw), timeout=15)
-        if resp.status_code == 200:
-            return resp.json().get("updated_at", "")[:16]
-    except Exception:
-        pass
-    return ""
-
-
-def gitea_fetch_issues(org: str, repo: str, creds: tuple[str, str]) -> str:
-    """Fetch all issues + comments, return formatted text block."""
-    user, pw = creds
-    auth = (user, pw)
-    parts = []
-
-    for state in ["closed", "open"]:
-        page = 1
-        while True:
-            try:
-                resp = httpx.get(
-                    f"{GITEA_URL}/api/v1/repos/{org}/{repo}/issues",
-                    params={"type": "issues", "state": state, "limit": 50, "page": page},
-                    auth=auth, timeout=30
-                )
-                if resp.status_code != 200:
-                    break
-                issues = resp.json()
-                if not issues:
-                    break
-                for issue in issues:
-                    num = issue["number"]
-                    title = issue["title"]
-                    body = (issue.get("body") or "").strip()[:1500]
-                    labels = ", ".join(lb["name"] for lb in issue.get("labels", []))
-                    comment_count = issue.get("comments", 0)
-
-                    header = f"ISSUE #{num} [{state}]: {title}"
-                    if labels:
-                        header += f"  [labels: {labels}]"
-                    parts.append(header)
-                    if body:
-                        parts.append(f"Body: {body}")
-
-                    if comment_count > 0:
-                        try:
-                            cr = httpx.get(
-                                f"{GITEA_URL}/api/v1/repos/{org}/{repo}/issues/{num}/comments",
-                                auth=auth, timeout=20
-                            )
-                            if cr.status_code == 200:
-                                for c in cr.json():
-                                    cbody = (c.get("body") or "").strip()[:800]
-                                    if cbody:
-                                        parts.append(f"  COMMENT: {cbody}")
-                        except Exception:
-                            pass
-                    parts.append("")
-                if len(issues) < 50:
-                    break
-                page += 1
-            except Exception as e:
-                log(f"  gitea issues error {org}/{repo}: {e}")
-                break
-
-    return "\n".join(parts).strip()
-
-
-def gitea_fetch_commits(org: str, repo: str, creds: tuple[str, str], max_commits: int = 200) -> str:
-    """Fetch recent commit messages from Gitea API, return formatted text block."""
-    user, pw = creds
-    parts = []
-    page = 1
-    fetched = 0
-
-    while fetched < max_commits:
-        try:
-            resp = httpx.get(
-                f"{GITEA_URL}/api/v1/repos/{org}/{repo}/commits",
-                params={"limit": 50, "page": page},
-                auth=(user, pw), timeout=30
-            )
-            if resp.status_code != 200:
-                break
-            commits = resp.json()
-            if not commits:
-                break
-            for c in commits:
-                sha = c.get("sha", "")[:8]
-                msg = (c.get("commit", {}).get("message") or "").strip()
-                author = c.get("commit", {}).get("author", {}).get("name", "")
-                date = (c.get("commit", {}).get("author", {}).get("date") or "")[:10]
-                if not msg or len(msg) < 10:
-                    continue
-                # skip noisy auto-generated commits
-                first_line = msg.split("\n")[0].lower()
-                if any(first_line.startswith(p) for p in GIT_SKIP_SUBJECTS):
-                    continue
-                parts.append(f"COMMIT {sha} by {author} on {date}:\n{msg[:600]}")
-                parts.append("")
-            fetched += len(commits)
-            if len(commits) < 50:
-                break
-            page += 1
-        except Exception as e:
-            log(f"  gitea commits error {org}/{repo}: {e}")
-            break
-
-    return "\n".join(parts).strip()
-
-
 def _extract_and_write(
     text: str, system_prompt: str, model: str, dry_run: bool,
     label: str
@@ -688,21 +527,21 @@ def _extract_and_write(
     return facts_written
 
 
-def process_gitea_repo(
-    org: str, repo: str, creds: tuple[str, str],
+def process_forge_repo(
+    client, owner: str, repo: str,
     known_hash: str | None, dry_run: bool, model: str
 ) -> tuple[int, dict | None]:
-    fhash = gitea_repo_fingerprint(org, repo, creds)
+    fhash = client.repo_fingerprint(owner, repo)
     if known_hash == fhash:
         return -1, None
 
     facts_written = 0
 
-    issues_text = gitea_fetch_issues(org, repo, creds)
+    issues_text = client.fetch_issues(owner, repo)
     if len(issues_text) >= 200:
         facts_written += _extract_and_write(issues_text, GITEA_SYSTEM_PROMPT, model, dry_run, "issues")
 
-    commits_text = gitea_fetch_commits(org, repo, creds)
+    commits_text = client.fetch_commits(owner, repo)
     if len(commits_text) >= 200:
         facts_written += _extract_and_write(commits_text, GIT_SYSTEM_PROMPT, model, dry_run, "commits")
 
@@ -713,8 +552,75 @@ def process_gitea_repo(
         "file_hash": fhash,
         "facts_written": facts_written,
         "processed_at": datetime.now().isoformat(),
-        "source": "gitea"
+        "source": client.prefix
     }
+
+
+def run_forge_pipeline(
+    client, forge_label: str, skip_repos: set[str],
+    cp: dict, cp_lock: threading.Lock, args
+) -> int:
+    try:
+        repo_list = client.list_repos()
+    except Exception as e:
+        log(f"{forge_label}: failed to list repos: {e}")
+        return 0
+    log(f"Found {len(repo_list)} {forge_label} repos")
+
+    def _needs_update(item: tuple[str, str]) -> bool:
+        owner, repo = item
+        known = cp["processed"].get(f"{client.prefix}:{owner}/{repo}", {}).get("file_hash")
+        return known != client.repo_fingerprint(owner, repo)
+
+    fp_workers = min(8, max(len(repo_list), 1))
+    with ThreadPoolExecutor(max_workers=fp_workers) as pool:
+        needs = list(pool.map(_needs_update, repo_list))
+
+    pending = [item for item, need in zip(repo_list, needs)
+               if need and f"{item[0]}/{item[1]}" not in skip_repos]
+    skipped_count = sum(1 for item in repo_list if f"{item[0]}/{item[1]}" in skip_repos)
+    log(f"{forge_label}: {len(repo_list) - len(pending) - skipped_count} up-to-date, "
+        f"{skipped_count} skipped, {len(pending)} pending")
+    if args.limit:
+        pending = pending[:args.limit]
+        log(f"{forge_label}: limited to {len(pending)}")
+
+    def run_one_forge(item: tuple[str, str]) -> int:
+        owner, repo = item
+        key = f"{client.prefix}:{owner}/{repo}"
+        log(f"processing {forge_label} {owner}/{repo}")
+        with cp_lock:
+            known = cp["processed"].get(key, {}).get("file_hash")
+        try:
+            n, entry = process_forge_repo(client, owner, repo, known, args.dry_run, args.model)
+            with cp_lock:
+                if entry is not None:
+                    cp["processed"][key] = entry
+                cp["stats"]["files"] += 1
+                if n > 0:
+                    cp["stats"]["facts"] += n
+                save_checkpoint(cp)
+            if n == -1:
+                log(f"  already up-to-date, skip")
+            elif n == 0:
+                log(f"  nothing extracted")
+            else:
+                log(f"  wrote {n} facts")
+            return max(n, 0)
+        except Exception as e:
+            log(f"  ERROR: {e}")
+            return 0
+
+    facts = 0
+    if args.workers > 1:
+        with ThreadPoolExecutor(max_workers=args.workers) as pool:
+            futures = {pool.submit(run_one_forge, item): item for item in pending}
+            for future in as_completed(futures):
+                facts += future.result()
+    else:
+        for item in pending:
+            facts += run_one_forge(item)
+    return facts
 
 
 def chunk_text(text: str) -> list[str]:
@@ -954,11 +860,21 @@ def main():
     parser.add_argument("--git", action="store_true", help="Also mine git commit logs from project repos")
     parser.add_argument("--git-roots", nargs="+", type=Path, default=GIT_ROOTS_DEFAULT,
                         help="Root directories containing git repos to mine")
-    parser.add_argument("--gitea", action="store_true", help="Mine Gitea issues and PR discussions")
+    parser.add_argument("--github", action="store_true", help="Mine GitHub issues and commits (requires GITHUB_TOKEN)")
+    parser.add_argument("--github-orgs", nargs="+", default=[], metavar="ORG",
+                        help="GitHub orgs to mine (default: authenticated user's own repos)")
+    parser.add_argument("--github-url", default="https://api.github.com",
+                        help="GitHub API base URL (override for GitHub Enterprise)")
+    parser.add_argument("--gitlab", action="store_true", help="Mine GitLab issues and commits (requires GITLAB_TOKEN)")
+    parser.add_argument("--gitlab-groups", nargs="+", default=[], metavar="GROUP",
+                        help="GitLab groups to mine (default: owned projects)")
+    parser.add_argument("--gitlab-url", default="https://gitlab.com",
+                        help="GitLab base URL (override for self-hosted)")
+    parser.add_argument("--gitea", action="store_true", help="Mine Gitea issues and commits")
     parser.add_argument("--gitea-orgs", nargs="+", default=GITEA_ORGS_DEFAULT,
                         help="Gitea orgs to mine (default: ai repos)")
     parser.add_argument("--skip-repos", nargs="+", default=[],
-                        help="Gitea repos to skip, format org/repo (e.g. repos/teralab-web)")
+                        help="Repos to skip, format owner/repo — applies to all forges")
     args = parser.parse_args()
 
     if args.checkpoint:
@@ -1048,67 +964,39 @@ def main():
         for item in pending:
             total_facts += run_one(item)
 
-    gitea_facts = 0
-    if args.gitea:
-        gitea_creds = gitea_get_credentials()
-        if not gitea_creds[0]:
-            log("Gitea: could not read credentials — skipping")
+    skip_set = set(args.skip_repos)
+
+    if args.github:
+        gh_token = os.getenv("GITHUB_TOKEN", "")
+        if not gh_token:
+            log("GitHub: GITHUB_TOKEN not set — skipping")
         else:
-            gitea_repo_list = gitea_list_repos(args.gitea_orgs, gitea_creds)
-            log(f"Found {len(gitea_repo_list)} Gitea repos across {len(args.gitea_orgs)} orgs")
+            gh_client = GitHubForgeClient(token=gh_token, base_url=args.github_url, orgs=args.github_orgs)
+            total_facts += run_forge_pipeline(gh_client, "github", skip_set, cp, cp_lock, args)
 
-            def _gitea_needs_update(item: tuple[str, str]) -> bool:
-                org, repo = item
-                known = cp["processed"].get(f"gitea:{org}/{repo}", {}).get("file_hash")
-                return known != gitea_repo_fingerprint(org, repo, gitea_creds)
+    if args.gitlab:
+        gl_token = os.getenv("GITLAB_TOKEN", "")
+        if not gl_token:
+            log("GitLab: GITLAB_TOKEN not set — skipping")
+        else:
+            gl_client = GitLabForgeClient(token=gl_token, base_url=args.gitlab_url, groups=args.gitlab_groups)
+            total_facts += run_forge_pipeline(gl_client, "gitlab", skip_set, cp, cp_lock, args)
 
-            fp_workers = min(8, len(gitea_repo_list))
-            with ThreadPoolExecutor(max_workers=fp_workers) as pool:
-                needs = list(pool.map(_gitea_needs_update, gitea_repo_list))
-            skip_set = set(args.skip_repos)
-            gitea_pending = [item for item, need in zip(gitea_repo_list, needs) if need and f"{item[0]}/{item[1]}" not in skip_set]
-            skipped_count = sum(1 for item in gitea_repo_list if f"{item[0]}/{item[1]}" in skip_set)
-            log(f"Gitea: {len(gitea_repo_list) - len(gitea_pending) - skipped_count} already up-to-date, {skipped_count} skipped, {len(gitea_pending)} pending")
-            if args.limit:
-                gitea_pending = gitea_pending[:args.limit]
-                log(f"Gitea: limited to {len(gitea_pending)}")
-
-            def run_gitea(item: tuple[str, str]) -> int:
-                org, repo = item
-                key = f"gitea:{org}/{repo}"
-                log(f"processing gitea {org}/{repo}")
-                with cp_lock:
-                    known = cp["processed"].get(key, {}).get("file_hash")
-                try:
-                    n, entry = process_gitea_repo(org, repo, gitea_creds, known, args.dry_run, args.model)
-                    with cp_lock:
-                        if entry is not None:
-                            cp["processed"][key] = entry
-                        cp["stats"]["files"] += 1
-                        if n > 0:
-                            cp["stats"]["facts"] += n
-                        save_checkpoint(cp)
-                    if n == -1:
-                        log(f"  already up-to-date, skip")
-                    elif n == 0:
-                        log(f"  no issues or nothing extracted")
-                    else:
-                        log(f"  wrote {n} facts")
-                    return max(n, 0)
-                except Exception as e:
-                    log(f"  ERROR: {e}")
-                    return 0
-
-            if args.workers > 1:
-                with ThreadPoolExecutor(max_workers=args.workers) as pool:
-                    futures = {pool.submit(run_gitea, item): item for item in gitea_pending}
-                    for future in as_completed(futures):
-                        gitea_facts += future.result()
+    if args.gitea:
+        gitea_token = os.getenv("GITEA_TOKEN", "")
+        if gitea_token:
+            gitea_client = GiteaForgeClient(base_url=GITEA_URL, orgs=args.gitea_orgs, token=gitea_token)
+        else:
+            cred_user, cred_pw = get_gitea_credentials(GITEA_URL)
+            if not cred_user:
+                log("Gitea: no GITEA_TOKEN and no git credential store credentials — skipping")
+                gitea_client = None
             else:
-                for item in gitea_pending:
-                    gitea_facts += run_gitea(item)
+                gitea_client = GiteaForgeClient(base_url=GITEA_URL, orgs=args.gitea_orgs, user=cred_user, password=cred_pw)
+        if gitea_client:
+            total_facts += run_forge_pipeline(gitea_client, "gitea", skip_set, cp, cp_lock, args)
 
-    log(f"Done. {total_facts + gitea_facts} new facts written. Total in checkpoint: {cp['stats']['facts']}")
+    log(f"Done. {total_facts} new facts written. Total in checkpoint: {cp['stats']['facts']}")
 
 
 if __name__ == "__main__":
