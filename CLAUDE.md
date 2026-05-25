@@ -29,5 +29,5 @@ bash server/provision.sh   # Debian/Ubuntu — installs mem0 + Qdrant as systemd
 ## Standards
 See global: `C:\Users\tomis\.claude\coding-standards.md`
 
-**Exception:** `it42ai` shared lib vendored into `miner/_llm.py` — required for standalone
-distribution so users don't need access to the internal Gitea instance.
+**Exception:** LLM client kept self-contained (`miner/_llm.py`, only `httpx` dep) to avoid
+external library coupling and enable standalone distribution.

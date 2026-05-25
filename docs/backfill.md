@@ -14,7 +14,7 @@ The miner (`miner/miner.py`) ingests existing content into fleet-memory.
 
 ```bash
 cd miner/
-pip install httpx it42ai  # or: pip install -r requirements.txt
+pip install httpx  # or: pip install -r requirements.txt
 
 # Claude transcripts only (fastest first run — default mode, no flag needed):
 python miner.py --workers 4

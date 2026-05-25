@@ -53,13 +53,8 @@ LOG_FILE = Path(__file__).parent / "miner.log"
 FLEET_MEMORY_URL = os.getenv("FLEET_MEMORY_URL", "http://127.0.0.1:8800/mcp")
 DEFAULT_MODEL = "qwen3:8b"
 
-# Markdown mining — project repos (override with --markdown-roots or MARKDOWN_ROOTS env)
-_default_projects = os.getenv("PROJECTS_ROOT")
-MARKDOWN_ROOTS_DEFAULT = (
-    [Path(_default_projects)]
-    if _default_projects
-    else [Path(r"C:\Users\tomis\Projects\ai"), Path(r"C:\Users\tomis\Projects\repos")]
-)
+# Markdown mining — project repos (set PROJECTS_ROOT env var or pass --markdown-roots)
+MARKDOWN_ROOTS_DEFAULT = None  # must be provided at runtime
 # Root-level files to include from each repo
 MARKDOWN_ROOT_FILES = {"CLAUDE.md", "AGENTS.md", "METHODOLOGY.md", "IDENTITY.md"}
 # Subdirectory globs (relative to repo root, one level deep)
@@ -69,11 +64,8 @@ MARKDOWN_SKIP_NAMES = {"README.md", "readme.md"}
 # Directory names to skip during repo discovery
 MARKDOWN_SKIP_DIRS = {"node_modules", ".git", "__pycache__", "dist", "build", ".venv", "venv"}
 
-# Git commit mining
-GIT_ROOTS_DEFAULT = [
-    Path(r"C:\Users\tomis\Projects\ai"),
-    Path(r"C:\Users\tomis\Projects\repos"),
-]
+# Git commit mining — set PROJECTS_ROOT env var or pass --git-roots
+GIT_ROOTS_DEFAULT = None  # must be provided at runtime
 
 # Gitea issue mining
 GITEA_URL = os.getenv("GITEA_URL", "http://127.0.0.1:3000")
@@ -892,9 +884,21 @@ def main():
     md_files = []
     git_repos = []
     if args.markdown:
+        if not args.markdown_roots:
+            projects = os.getenv("PROJECTS_ROOT")
+            if not projects:
+                print("ERROR: --markdown requires --markdown-roots or PROJECTS_ROOT env var", file=sys.stderr)
+                sys.exit(1)
+            args.markdown_roots = [Path(projects)]
         md_files = find_markdown_files(args.markdown_roots)
         log(f"Found {len(md_files)} markdown files across {len(args.markdown_roots)} roots")
     if args.git:
+        if not args.git_roots:
+            projects = os.getenv("PROJECTS_ROOT")
+            if not projects:
+                print("ERROR: --git requires --git-roots or PROJECTS_ROOT env var", file=sys.stderr)
+                sys.exit(1)
+            args.git_roots = [Path(projects)]
         git_repos = find_git_repos(args.git_roots)
         log(f"Found {len(git_repos)} git repos across {len(args.git_roots)} roots")
     all_files = all_files + md_files + git_repos

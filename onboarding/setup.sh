@@ -57,7 +57,7 @@ echo "  --gitea               Mine Gitea instance (set GITEA_URL env var)"
 echo ""
 echo "Example (run manually after reviewing):"
 echo "  cd $MINER_DIR"
-echo "  pip install it42ai httpx"
+echo "  pip install httpx"
 echo "  python miner.py --workers 4"
 echo ""
 

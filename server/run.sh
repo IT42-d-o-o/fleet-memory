@@ -1,7 +1,7 @@
 #!/bin/sh
 # memory-mcp launcher.
 #
-# IT42 production: fetches OPENAI_API_KEY from Vault, never written to disk.
+# Vault-integrated deploy: fetches OPENAI_API_KEY from Vault at runtime, never written to disk.
 # Standalone install: set OPENAI_API_KEY directly in memory-mcp.service or .env.
 # Ollama mode: set LLM_PROVIDER=ollama in unit — no API key needed.
 set -e
