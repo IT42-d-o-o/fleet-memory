@@ -19,11 +19,11 @@ python miner.py --dry-run
 # Transcripts only (default sources: Claude Code, Codex, Antigravity, Cursor, OpenClaw)
 python miner.py --workers 4
 
-# Mine git commit logs
-python miner.py --git
+# Mine git commit logs (set PROJECTS_ROOT or pass --git-roots)
+python miner.py --git --git-roots ~/projects
 
 # Mine markdown docs (CLAUDE.md, AGENTS.md, docs/*.md)
-python miner.py --markdown
+python miner.py --markdown --markdown-roots ~/projects
 
 # Mine GitHub issues and commits
 python miner.py --github --github-orgs myorg
@@ -35,7 +35,8 @@ python miner.py --gitlab --gitlab-groups mygroup
 python miner.py --gitea --gitea-orgs ai repos
 
 # All sources combined
-python miner.py --git --markdown --github --gitlab --gitea --workers 4
+python miner.py --git --git-roots ~/projects --markdown --markdown-roots ~/projects \
+  --github --gitlab --gitea --workers 4
 
 # Only files since a date
 python miner.py --since 2026-04-01

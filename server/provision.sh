@@ -64,6 +64,7 @@ chown qdrant:qdrant /opt/qdrant/config/config.yaml
 
 # --- 3. memory-mcp Python env -------------------------------------------
 echo "--- installing memory-mcp ---"
+useradd -r -s /bin/false memory-mcp 2>/dev/null || true
 mkdir -p /opt/memory-mcp
 python3 -m venv /opt/memory-mcp/venv
 /opt/memory-mcp/venv/bin/pip install -q --upgrade pip
@@ -72,6 +73,7 @@ python3 -m venv /opt/memory-mcp/venv
 cp "$SCRIPT_DIR/server.py" /opt/memory-mcp/server.py
 cp "$SCRIPT_DIR/run.sh"    /opt/memory-mcp/run.sh
 chmod +x /opt/memory-mcp/run.sh
+chown -R memory-mcp:memory-mcp /opt/memory-mcp
 
 # --- 4. systemd units ----------------------------------------------------
 cp "$SCRIPT_DIR/qdrant.service"     /etc/systemd/system/qdrant.service
@@ -86,8 +88,7 @@ sed -i "s|Environment=MEM0_EMBED_MODEL=text-embedding-3-small|Environment=MEM0_E
     /etc/systemd/system/memory-mcp.service
 
 if [ "$LLM_PROVIDER" = "openai" ]; then
-    # Write key to unit (standalone installs without Vault)
-    # For IT42 infra: use Vault token approach instead (see run.sh)
+    # Write key to unit. For Vault-integrated deploys, use run.sh vault-token approach instead.
     sed -i "/Environment=LLM_PROVIDER=/a Environment=OPENAI_API_KEY=${OPENAI_API_KEY}" \
         /etc/systemd/system/memory-mcp.service
 elif [ "$LLM_PROVIDER" = "ollama" ]; then

@@ -9,9 +9,11 @@ Resumable: checkpoint.json tracks processed files by path+hash.
 Run: python miner.py [--dry-run] [--since YYYY-MM-DD] [--limit N]
                      [--skip-subagents] [--workers N] [--model NAME]
                      [--markdown] [--markdown-roots PATH [PATH ...]]
+                     [--git] [--git-roots PATH [PATH ...]]
                      [--github] [--github-orgs ORG ...] [--github-url URL]
                      [--gitlab] [--gitlab-groups GROUP ...] [--gitlab-url URL]
                      [--gitea] [--gitea-orgs ORG ...]
+Note: --markdown and --git require --markdown-roots/--git-roots or PROJECTS_ROOT env var.
 """
 
 import argparse
@@ -69,7 +71,7 @@ GIT_ROOTS_DEFAULT = None  # must be provided at runtime
 
 # Gitea issue mining
 GITEA_URL = os.getenv("GITEA_URL", "http://127.0.0.1:3000")
-GITEA_ORGS_DEFAULT = ["ai", "repos"]
+GITEA_ORGS_DEFAULT: list[str] = []
 GITEA_SKIP_REPOS: set[str] = set()
 
 # ~3000 words per chunk, rough estimate: 4 chars/word

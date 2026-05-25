@@ -6,7 +6,7 @@ Requires=qdrant.service
 
 [Service]
 Type=simple
-User=root
+User=memory-mcp
 WorkingDirectory=/opt/memory-mcp
 Environment=QDRANT_HOST=127.0.0.1
 Environment=QDRANT_PORT=6333

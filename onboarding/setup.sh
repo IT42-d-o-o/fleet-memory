@@ -7,7 +7,7 @@
 #   3. Prints the MCP config snippet to paste into your Claude Code settings
 #
 # Requirements:
-#   - Debian/Ubuntu host (or Docker — set FLEET_MEMORY_DOCKER=1)
+#   - Debian/Ubuntu host with systemd
 #   - Python 3.10+
 #   - Git (for repo mining)
 #
@@ -51,13 +51,14 @@ fi
 echo ""
 echo "--- Step 3: backfill ---"
 echo "Miner supports:"
-echo "  --transcripts <dir>   Claude/Codex session transcript dirs"
+echo "  (default)             Claude/Codex/Cursor transcripts — auto-discovered"
 echo "  --git-roots <dir>     Scan subdirs for git repos"
+echo "  --markdown-roots <d>  Scan subdirs for markdown docs"
 echo "  --gitea               Mine Gitea instance (set GITEA_URL env var)"
 echo ""
 echo "Example (run manually after reviewing):"
 echo "  cd $MINER_DIR"
-echo "  pip install httpx"
+echo "  pip install httpx python-dotenv"
 echo "  python miner.py --workers 4"
 echo ""
 
