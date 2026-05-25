@@ -17,8 +17,11 @@ import json
 import logging
 from typing import Any
 
+import uvicorn
 from mem0 import Memory
 from mcp.server.fastmcp import FastMCP
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response as StarletteResponse
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,10 +40,8 @@ HISTORY_DB = os.environ.get("MEM0_HISTORY_DB", "/opt/memory-mcp/history.db")
 FLEET_NS = os.environ.get("MEM0_NAMESPACE", "fleet")
 MCP_HOST = os.environ.get("MCP_HOST", "0.0.0.0")
 MCP_PORT = int(os.environ.get("MCP_PORT", "8800"))
-TELEMETRY_FILE = os.environ.get(
-    "LLM_TEXTFILE_METRIC",
-    "/var/lib/node_exporter/textfile_collector/memory_mcp.prom",
-)
+MCP_AUTH_TOKEN = os.environ.get("MCP_AUTH_TOKEN", "")
+TELEMETRY_FILE = os.environ.get("LLM_TEXTFILE_METRIC", "")
 
 _EMBED_DIMS = {
     "text-embedding-3-small": 1536,
@@ -224,5 +225,19 @@ def search_memory(query: str, limit: int = 5) -> str:
 
 
 if __name__ == "__main__":
+    app = mcp.streamable_http_app()
+
+    if MCP_AUTH_TOKEN:
+        class _BearerAuth(BaseHTTPMiddleware):
+            async def dispatch(self, request, call_next):
+                auth = request.headers.get("Authorization", "")
+                if not auth.startswith("Bearer ") or auth[7:] != MCP_AUTH_TOKEN:
+                    return StarletteResponse("Unauthorized", status_code=401)
+                return await call_next(request)
+        app.add_middleware(_BearerAuth)
+        log.info("bearer auth enabled")
+    else:
+        log.warning("MCP_AUTH_TOKEN not set — server accepts unauthenticated requests")
+
     log.info("memory-mcp listening on %s:%s (streamable-http, path /mcp)", MCP_HOST, MCP_PORT)
-    mcp.run(transport="streamable-http")
+    uvicorn.run(app, host=MCP_HOST, port=MCP_PORT)
