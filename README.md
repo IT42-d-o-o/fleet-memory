@@ -65,7 +65,8 @@ Add `onboarding/claude-md-snippet.md` content to your `CLAUDE.md`.
 
 ```bash
 cd miner/
-pip install httpx it42ai
+cp .env.example .env   # edit: set FLEET_MEMORY_URL and your LLM provider
+pip install httpx python-dotenv
 python miner.py --workers 4
 ```
 
@@ -82,7 +83,27 @@ See `docs/backfill.md` for all options.
 
 See `docs/llm-backends.md`. Short version: OpenAI gives best quality; Ollama is free but lower recall on terse content.
 
+## Transcript sources
+
+The miner backfills from all major AI coding tools:
+
+| Tool | Path |
+|------|------|
+| Claude Code | `~/.claude/projects/**/*.jsonl` |
+| Codex | `~/.codex/sessions/**/*.jsonl` |
+| Antigravity (Google) | `~/.gemini/antigravity/brain/<uuid>/.system_generated/logs/transcript.jsonl` |
+| Cursor | `~/.cursor/projects/<workspace>/agent-transcripts/**/*.jsonl` |
+| OpenClaw | `~/.openclaw/agents/<agentId>/sessions/*.jsonl` |
+
+## Built on
+
+- [mem0](https://github.com/mem0ai/mem0) — memory layer with semantic deduplication (MIT)
+- [Qdrant](https://github.com/qdrant/qdrant) — vector store (Apache 2.0)
+- [FastMCP](https://github.com/jlowin/fastmcp) — MCP server framework (MIT)
+
+See `NOTICE` for full attribution.
+
 ## Requirements
 
 Server: Debian/Ubuntu, Python 3.10+, systemd  
-Miner: Python 3.10+, `httpx`, `it42ai` library
+Miner: Python 3.10+, `httpx`, `python-dotenv`

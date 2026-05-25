@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
+.env
 checkpoint.json
 checkpoint_test.json
 miner.log

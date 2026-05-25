@@ -1,6 +1,8 @@
 """
-Transcript miner — extracts facts/decisions/ideas from Claude and Codex session transcripts
-and project documentation (Markdown) and writes them to fleet memory (mem0 at CT356).
+Transcript miner — extracts facts/decisions/ideas from AI session transcripts
+and project documentation (Markdown) and writes them to fleet memory (mem0).
+
+Sources: Claude Code, Codex, Antigravity, Cursor, OpenClaw, Markdown docs, git logs, Gitea issues.
 
 Resumable: checkpoint.json tracks processed files by path+hash.
 Run: python miner.py [--dry-run] [--since YYYY-MM-DD] [--limit N]
@@ -13,6 +15,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -22,19 +25,28 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
-from it42ai.ai_gateway import create_llm_client
-from it42ai.llm_telemetry import push_tokens
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / ".env")
+except ImportError:
+    pass
+
+from _llm import create_llm_client, push_tokens
 
 # Force UTF-8 line-buffered stdout on Windows (fixes PowerShell console lag)
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
 
 CLAUDE_SESSIONS_ROOT = Path.home() / ".claude" / "projects"
 CODEX_SESSIONS_ROOT = Path.home() / ".codex" / "sessions"
+ANTIGRAVITY_BRAIN_ROOT = Path.home() / ".gemini" / "antigravity" / "brain"
+CURSOR_PROJECTS_ROOT = Path.home() / ".cursor" / "projects"
+OPENCLAW_SESSIONS_ROOT = Path.home() / ".openclaw" / "agents"
 CHECKPOINT_FILE = Path(__file__).parent / "checkpoint.json"
 LOG_FILE = Path(__file__).parent / "miner.log"
 
-FLEET_MEMORY_URL = os.getenv("FLEET_MEMORY_URL", "http://192.168.50.138:8800/mcp")
-DEFAULT_MODEL = "qwen3-coder:30b"
+FLEET_MEMORY_URL = os.getenv("FLEET_MEMORY_URL", "http://127.0.0.1:8800/mcp")
+DEFAULT_MODEL = "qwen3:8b"
 
 # Markdown mining — project repos (override with --markdown-roots or MARKDOWN_ROOTS env)
 _default_projects = os.getenv("PROJECTS_ROOT")
@@ -61,7 +73,7 @@ GIT_ROOTS_DEFAULT = [
 GIT_SKIP_SUBJECTS = {"merge branch", "merge pull request", "initial commit", "wip", "update readme"}
 
 # Gitea issue mining
-GITEA_URL = os.getenv("GITEA_URL", "http://192.168.50.135:3000")
+GITEA_URL = os.getenv("GITEA_URL", "http://127.0.0.1:3000")
 GITEA_ORGS_DEFAULT = ["ai", "repos"]
 GITEA_SKIP_REPOS: set[str] = set()
 
@@ -290,6 +302,114 @@ def parse_codex_transcript(path: Path) -> str:
                                 continue
                             max_len = 2000 if role == "user" else 500
                             parts.append(f"{label}: {text[:max_len]}")
+    except Exception as e:
+        log(f"  parse error {path.name}: {e}")
+    return "\n".join(parts)
+
+
+def parse_antigravity_transcript(path: Path) -> str:
+    """Extract conversation text from Antigravity (Google) .jsonl transcript."""
+    parts = []
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            source = obj.get("source", "")
+            typ = obj.get("type", "")
+            content = obj.get("content", "")
+            thinking = obj.get("thinking", "")
+            if source == "USER_EXPLICIT" and typ == "USER_INPUT":
+                match = re.search(r"<USER_REQUEST>(.*?)</USER_REQUEST>", content, re.DOTALL)
+                if match:
+                    text = match.group(1).strip()
+                    if text:
+                        parts.append(f"USER: {text}")
+            elif source == "MODEL" and typ == "PLANNER_RESPONSE":
+                if thinking:
+                    parts.append(f"THINKING: {thinking.strip()[:300]}")
+                if content and not obj.get("tool_calls"):
+                    parts.append(f"ANTIGRAVITY: {content.strip()[:500]}")
+    except Exception as e:
+        log(f"  parse error {path.name}: {e}")
+    return "\n\n".join(parts)
+
+
+def parse_cursor_transcript(path: Path) -> str:
+    """Extract conversation text from Cursor agent-transcript .jsonl."""
+    parts = []
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            role = obj.get("role", "")
+            msg = obj.get("message", {})
+            content_blocks = msg.get("content", [])
+            if not isinstance(content_blocks, list):
+                continue
+            label = "USER" if role == "user" else "CURSOR"
+            for block in content_blocks:
+                if not isinstance(block, dict) or block.get("type") != "text":
+                    continue
+                text = block.get("text", "").strip()
+                if not text or len(text) <= 5:
+                    continue
+                # Strip timestamp prefix from user messages: "[Mon 2026-...] actual text"
+                text = re.sub(r"^\[.*?\]\s*", "", text).strip()
+                # Extract user_query tag if present
+                match = re.search(r"<user_query>(.*?)</user_query>", text, re.DOTALL)
+                if match:
+                    text = match.group(1).strip()
+                if not text:
+                    continue
+                max_len = 2000 if role == "user" else 500
+                parts.append(f"{label}: {text[:max_len]}")
+    except Exception as e:
+        log(f"  parse error {path.name}: {e}")
+    return "\n".join(parts)
+
+
+def parse_openclaw_transcript(path: Path) -> str:
+    """Extract conversation text from OpenClaw session .jsonl."""
+    parts = []
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if obj.get("type") != "message":
+                continue
+            msg = obj.get("message", {})
+            role = msg.get("role", "")
+            content = msg.get("content", [])
+            if not isinstance(content, list):
+                continue
+            label = "USER" if role == "user" else "OPENCLAW"
+            for block in content:
+                if not isinstance(block, dict) or block.get("type") != "text":
+                    continue
+                text = block.get("text", "").strip()
+                if not text or len(text) <= 5:
+                    continue
+                # Strip [timestamp] prefix
+                text = re.sub(r"^\[.*?\]\s*", "", text).strip()
+                if not text:
+                    continue
+                max_len = 2000 if role == "user" else 500
+                parts.append(f"{label}: {text[:max_len]}")
     except Exception as e:
         log(f"  parse error {path.name}: {e}")
     return "\n".join(parts)
@@ -692,12 +812,13 @@ def add_to_fleet_memory(content: str, category: str, dry_run: bool) -> bool:
 
 
 def find_all_transcripts(since: datetime | None, skip_subagents: bool = False) -> list[tuple[Path, str]]:
-    """Return list of (path, source_type) for all .jsonl files."""
+    """Return list of (path, source_type) for all transcript .jsonl files."""
     results = []
-    for root in [CLAUDE_SESSIONS_ROOT, CODEX_SESSIONS_ROOT]:
+
+    # Claude Code and Codex
+    for root, source in [(CLAUDE_SESSIONS_ROOT, "claude"), (CODEX_SESSIONS_ROOT, "codex")]:
         if not root.exists():
             continue
-        source = "claude" if "claude" in str(root) else "codex"
         for path in root.rglob("*.jsonl"):
             if skip_subagents and "subagents" in path.parts:
                 continue
@@ -706,6 +827,49 @@ def find_all_transcripts(since: datetime | None, skip_subagents: bool = False) -
                 if mtime < since:
                     continue
             results.append((path, source))
+
+    # Antigravity (Google) — ~/.gemini/antigravity/brain/<uuid>/.system_generated/logs/transcript.jsonl
+    if ANTIGRAVITY_BRAIN_ROOT.exists():
+        for session_dir in ANTIGRAVITY_BRAIN_ROOT.iterdir():
+            if not session_dir.is_dir():
+                continue
+            transcript = session_dir / ".system_generated" / "logs" / "transcript.jsonl"
+            if transcript.exists():
+                if since:
+                    mtime = datetime.fromtimestamp(transcript.stat().st_mtime, tz=timezone.utc)
+                    if mtime < since:
+                        continue
+                results.append((transcript, "antigravity"))
+
+    # Cursor — ~/.cursor/projects/<workspace>/agent-transcripts/<uuid>/<uuid>.jsonl
+    if CURSOR_PROJECTS_ROOT.exists():
+        for workspace_dir in CURSOR_PROJECTS_ROOT.iterdir():
+            at_root = workspace_dir / "agent-transcripts"
+            if not at_root.exists():
+                continue
+            for path in at_root.rglob("*.jsonl"):
+                if since:
+                    mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                    if mtime < since:
+                        continue
+                results.append((path, "cursor"))
+
+    # OpenClaw — ~/.openclaw/agents/<agentId>/sessions/<sessionId>.jsonl
+    if OPENCLAW_SESSIONS_ROOT.exists():
+        for agent_dir in OPENCLAW_SESSIONS_ROOT.iterdir():
+            sessions_dir = agent_dir / "sessions"
+            if not sessions_dir.exists():
+                continue
+            for path in sessions_dir.glob("*.jsonl"):
+                # Skip trajectory files
+                if path.name.endswith(".trajectory.jsonl"):
+                    continue
+                if since:
+                    mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                    if mtime < since:
+                        continue
+                results.append((path, "openclaw"))
+
     return sorted(results, key=lambda x: x[0].stat().st_mtime)
 
 
@@ -721,6 +885,18 @@ def process_file(path: Path, source: str, known_hash: str | None, dry_run: bool,
 
     if source == "claude":
         text = parse_claude_transcript(path)
+        system_prompt = None
+    elif source == "codex":
+        text = parse_codex_transcript(path)
+        system_prompt = None
+    elif source == "antigravity":
+        text = parse_antigravity_transcript(path)
+        system_prompt = None
+    elif source == "cursor":
+        text = parse_cursor_transcript(path)
+        system_prompt = None
+    elif source == "openclaw":
+        text = parse_openclaw_transcript(path)
         system_prompt = None
     elif source == "markdown":
         text = parse_markdown_file(path)
