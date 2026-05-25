@@ -781,6 +781,8 @@ def main():
     parser.add_argument("--gitea", action="store_true", help="Mine Gitea issues and PR discussions")
     parser.add_argument("--gitea-orgs", nargs="+", default=GITEA_ORGS_DEFAULT,
                         help="Gitea orgs to mine (default: ai repos)")
+    parser.add_argument("--skip-repos", nargs="+", default=[],
+                        help="Gitea repos to skip, format org/repo (e.g. repos/teralab-web)")
     args = parser.parse_args()
 
     if args.checkpoint:
@@ -887,8 +889,10 @@ def main():
             fp_workers = min(8, len(gitea_repo_list))
             with ThreadPoolExecutor(max_workers=fp_workers) as pool:
                 needs = list(pool.map(_gitea_needs_update, gitea_repo_list))
-            gitea_pending = [item for item, need in zip(gitea_repo_list, needs) if need]
-            log(f"Gitea: {len(gitea_repo_list) - len(gitea_pending)} already up-to-date, {len(gitea_pending)} pending")
+            skip_set = set(args.skip_repos)
+            gitea_pending = [item for item, need in zip(gitea_repo_list, needs) if need and f"{item[0]}/{item[1]}" not in skip_set]
+            skipped_count = sum(1 for item in gitea_repo_list if f"{item[0]}/{item[1]}" in skip_set)
+            log(f"Gitea: {len(gitea_repo_list) - len(gitea_pending) - skipped_count} already up-to-date, {skipped_count} skipped, {len(gitea_pending)} pending")
             if args.limit:
                 gitea_pending = gitea_pending[:args.limit]
                 log(f"Gitea: limited to {len(gitea_pending)}")
