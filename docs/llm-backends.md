@@ -2,7 +2,23 @@
 
 fleet-memory works with any LLM backend. Quality vs cost tradeoff is real — documented honestly below.
 
-## Option A — OpenAI (recommended for quality)
+## Option A — Universal (LiteLLM + fastembed)
+
+One API key, any provider. Embeddings run locally via fastembed — no second key needed.
+
+```bash
+export LLM_PROVIDER=litellm
+export LLM_API_KEY=<your key>
+export MEM0_LLM_MODEL=openai/gpt-4o-mini           # OpenAI
+# export MEM0_LLM_MODEL=anthropic/claude-3-5-haiku-20241022  # Anthropic
+# export MEM0_LLM_MODEL=openrouter/anthropic/claude-3-5-haiku  # OpenRouter
+```
+
+LiteLLM model strings: `<provider>/<model>` — [full list](https://docs.litellm.ai/docs/providers).
+
+**Tradeoff**: local fastembed embeddings (`BAAI/bge-small-en-v1.5`, ~130MB downloaded on first start) are slightly lower quality than OpenAI's `text-embedding-3-small` for deduplication. Acceptable for most use cases.
+
+## Option B — OpenAI (recommended for quality)
 
 Best deduplication, best extraction quality from noisy transcripts.
 

@@ -5,3 +5,4 @@
 # After first install: pip freeze > requirements.lock  (commit for reproducibility)
 mem0ai
 mcp
+fastembed

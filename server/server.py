@@ -53,7 +53,27 @@ def _ollama_embedder(url: str, model: str = "nomic-embed-text") -> dict:
     return {"provider": "ollama", "config": {"model": model, "ollama_base_url": url}}
 
 
-if LLM_PROVIDER == "ollama":
+def _fastembed_embedder(model: str = "BAAI/bge-small-en-v1.5") -> dict:
+    return {"provider": "fastembed", "config": {"model": model}}
+
+
+if LLM_PROVIDER == "litellm":
+    # Universal: any provider key + model string (anthropic/..., openai/..., openrouter/..., etc.)
+    # Embeddings run locally via fastembed — no second API key needed.
+    LLM_API_KEY = os.environ.get("LLM_API_KEY")
+    LLM_MODEL = os.environ.get("MEM0_LLM_MODEL", "openai/gpt-4o-mini")
+    if not LLM_API_KEY:
+        log.error("LLM_API_KEY not set and LLM_PROVIDER=litellm - refusing to start")
+        sys.exit(1)
+    mem0_config = {
+        "llm": {"provider": "litellm", "config": {"model": LLM_MODEL, "api_key": LLM_API_KEY, "temperature": 0.1}},
+        "embedder": _fastembed_embedder(),
+        "vector_store": {"provider": "qdrant", "config": _qdrant_cfg},
+        "history_db_path": HISTORY_DB,
+    }
+    log.info("backend=litellm llm=%s embedder=fastembed(local)", LLM_MODEL)
+
+elif LLM_PROVIDER == "ollama":
     OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
     LLM_MODEL = os.environ.get("MEM0_LLM_MODEL", "qwen3:8b")
     EMBED_MODEL = os.environ.get("MEM0_EMBED_MODEL", "nomic-embed-text")
