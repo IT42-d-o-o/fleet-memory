@@ -19,15 +19,34 @@ export MEM0_EMBED_MODEL=text-embedding-3-small
 
 **Cost**: ~$0.01-0.05 per backfill session. Ongoing session writes are trivial.
 
-## Option B — OpenRouter
+## Option B — Anthropic
 
-Any model via OpenRouter API. Use `LLM_API_KEY` + `LLM_BASE_URL`:
+mem0 uses Claude for LLM reasoning. Anthropic has no embeddings API, so you must also provide an embedder — OpenAI or Ollama.
 
 ```bash
-export LLM_API_KEY=sk-or-...
-export LLM_BASE_URL=https://openrouter.ai/api/v1
-export LLM_MODEL=anthropic/claude-3-haiku
+export LLM_PROVIDER=anthropic
+export ANTHROPIC_API_KEY=sk-ant-...
+export MEM0_LLM_MODEL=claude-3-5-haiku-20241022
+
+# embedder — pick one:
+export OPENAI_API_KEY=sk-...          # OpenAI text-embedding-3-small
+# OR
+export OLLAMA_URL=http://127.0.0.1:11434  # Ollama nomic-embed-text (free)
 ```
+
+## Option C — OpenRouter (or any OpenAI-compatible endpoint)
+
+Set `OPENAI_API_BASE` to the provider's base URL. OpenRouter has no embeddings endpoint, so add Ollama for embeddings (or drop `OLLAMA_URL` to fall back to OpenAI embeddings).
+
+```bash
+export LLM_PROVIDER=openai
+export OPENAI_API_KEY=sk-or-...
+export OPENAI_API_BASE=https://openrouter.ai/api/v1
+export MEM0_LLM_MODEL=anthropic/claude-3-5-haiku
+export OLLAMA_URL=http://127.0.0.1:11434   # embeddings via Ollama
+```
+
+Works with Together AI, Groq, Mistral, or any OpenAI-compatible endpoint — just change `OPENAI_API_BASE` and `MEM0_LLM_MODEL`.
 
 ## Option C — Local Ollama (no API key)
 

@@ -42,49 +42,78 @@ TELEMETRY_FILE = os.environ.get(
     "/var/lib/node_exporter/textfile_collector/memory_mcp.prom",
 )
 
+_qdrant_cfg = {"collection_name": COLLECTION, "host": QDRANT_HOST, "port": QDRANT_PORT}
+
+
+def _openai_embedder(api_key: str, model: str = "text-embedding-3-small") -> dict:
+    return {"provider": "openai", "config": {"model": model, "api_key": api_key}}
+
+
+def _ollama_embedder(url: str, model: str = "nomic-embed-text") -> dict:
+    return {"provider": "ollama", "config": {"model": model, "ollama_base_url": url}}
+
+
 if LLM_PROVIDER == "ollama":
     OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
     LLM_MODEL = os.environ.get("MEM0_LLM_MODEL", "qwen3:8b")
     EMBED_MODEL = os.environ.get("MEM0_EMBED_MODEL", "nomic-embed-text")
     mem0_config = {
-        "llm": {
-            "provider": "ollama",
-            "config": {"model": LLM_MODEL, "ollama_base_url": OLLAMA_URL},
-        },
-        "embedder": {
-            "provider": "ollama",
-            "config": {"model": EMBED_MODEL, "ollama_base_url": OLLAMA_URL},
-        },
-        "vector_store": {
-            "provider": "qdrant",
-            "config": {"collection_name": COLLECTION, "host": QDRANT_HOST, "port": QDRANT_PORT},
-        },
+        "llm": {"provider": "ollama", "config": {"model": LLM_MODEL, "ollama_base_url": OLLAMA_URL}},
+        "embedder": _ollama_embedder(OLLAMA_URL, EMBED_MODEL),
+        "vector_store": {"provider": "qdrant", "config": _qdrant_cfg},
         "history_db_path": HISTORY_DB,
     }
     log.info("backend=ollama url=%s llm=%s embedder=%s", OLLAMA_URL, LLM_MODEL, EMBED_MODEL)
+
+elif LLM_PROVIDER == "anthropic":
+    # Anthropic has no embeddings API — fall back to OpenAI embeddings (if key set) or Ollama.
+    ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+    if not ANTHROPIC_API_KEY:
+        log.error("ANTHROPIC_API_KEY not set and LLM_PROVIDER=anthropic - refusing to start")
+        sys.exit(1)
+    LLM_MODEL = os.environ.get("MEM0_LLM_MODEL", "claude-3-5-haiku-20241022")
+    if os.environ.get("OPENAI_API_KEY"):
+        embedder = _openai_embedder(os.environ["OPENAI_API_KEY"])
+        log.info("backend=anthropic llm=%s embedder=openai", LLM_MODEL)
+    elif os.environ.get("OLLAMA_URL"):
+        embedder = _ollama_embedder(os.environ["OLLAMA_URL"])
+        log.info("backend=anthropic llm=%s embedder=ollama", LLM_MODEL)
+    else:
+        log.error("LLM_PROVIDER=anthropic requires OPENAI_API_KEY or OLLAMA_URL for embeddings")
+        sys.exit(1)
+    mem0_config = {
+        "llm": {"provider": "anthropic", "config": {"model": LLM_MODEL, "api_key": ANTHROPIC_API_KEY, "temperature": 0.1}},
+        "embedder": embedder,
+        "vector_store": {"provider": "qdrant", "config": _qdrant_cfg},
+        "history_db_path": HISTORY_DB,
+    }
+
 else:
+    # openai — also handles OpenRouter and any OpenAI-compatible endpoint via OPENAI_API_BASE
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
     if not OPENAI_API_KEY:
-        log.error("OPENAI_API_KEY not set and LLM_PROVIDER=openai - refusing to start")
+        log.error("OPENAI_API_KEY not set and LLM_PROVIDER=%s - refusing to start", LLM_PROVIDER)
         sys.exit(1)
     LLM_MODEL = os.environ.get("MEM0_LLM_MODEL", "gpt-4o-mini")
     EMBED_MODEL = os.environ.get("MEM0_EMBED_MODEL", "text-embedding-3-small")
+    OPENAI_API_BASE = os.environ.get("OPENAI_API_BASE", "")
+    llm_cfg: dict = {"model": LLM_MODEL, "api_key": OPENAI_API_KEY, "temperature": 0.1}
+    if OPENAI_API_BASE:
+        llm_cfg["openai_base_url"] = OPENAI_API_BASE
+    # OpenRouter has no embeddings endpoint — fall back to Ollama if configured, else use OpenAI
+    if OPENAI_API_BASE and os.environ.get("OLLAMA_URL"):
+        embedder = _ollama_embedder(os.environ["OLLAMA_URL"])
+        log.info("backend=openai-compat base=%s llm=%s embedder=ollama", OPENAI_API_BASE, LLM_MODEL)
+    else:
+        embedder = _openai_embedder(OPENAI_API_KEY, EMBED_MODEL)
+        log.info("backend=openai%s llm=%s embedder=%s",
+                 f"-compat({OPENAI_API_BASE})" if OPENAI_API_BASE else "", LLM_MODEL, EMBED_MODEL)
     mem0_config = {
-        "llm": {
-            "provider": "openai",
-            "config": {"model": LLM_MODEL, "api_key": OPENAI_API_KEY, "temperature": 0.1},
-        },
-        "embedder": {
-            "provider": "openai",
-            "config": {"model": EMBED_MODEL, "api_key": OPENAI_API_KEY},
-        },
-        "vector_store": {
-            "provider": "qdrant",
-            "config": {"collection_name": COLLECTION, "host": QDRANT_HOST, "port": QDRANT_PORT},
-        },
+        "llm": {"provider": "openai", "config": llm_cfg},
+        "embedder": embedder,
+        "vector_store": {"provider": "qdrant", "config": _qdrant_cfg},
         "history_db_path": HISTORY_DB,
     }
-    log.info("backend=openai llm=%s embedder=%s", LLM_MODEL, EMBED_MODEL)
 
 log.info("init mem0 - qdrant=%s:%s collection=%s", QDRANT_HOST, QDRANT_PORT, COLLECTION)
 memory = Memory.from_config(mem0_config)
