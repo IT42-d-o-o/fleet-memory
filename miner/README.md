@@ -1,40 +1,67 @@
-# transcript-miner
+# fleet-memory miner
 
-Mines Claude Code and Codex session transcripts into fleet memory (mem0 CT356).
+Backfill miner for fleet memory. Mines AI session transcripts, git logs, markdown docs,
+and forge issues (GitHub, GitLab, Gitea) into the shared mem0 memory pool.
 
-## What it does
-- Reads all `.jsonl` from `~/.claude/projects/` and `~/.codex/sessions/`
-- Sends each session to `qwen3-coder:30b` via local Ollama
-- Extracts: facts, decisions, projects, lessons, tools, user preferences
-- Writes atomic items to fleet memory at `http://192.168.50.138:8800/mcp`
-- Resumable: `checkpoint.json` tracks processed files by path+hash
+## Setup
 
-## Requirements
+```bash
+pip install -r requirements.txt
+cp .env.example .env   # edit: set FLEET_MEMORY_URL and your LLM provider
 ```
-pip install httpx
-```
-Ollama must be running with `qwen3-coder:30b` pulled.
 
 ## Usage
+
 ```bash
-# Dry run — extract but don't write
+# Dry run — extract but don't write to memory
 python miner.py --dry-run
 
-# Full backfill (825 files, ~2-4 hours)
-python miner.py
+# Transcripts only (default sources: Claude Code, Codex, Antigravity, Cursor, OpenClaw)
+python miner.py --workers 4
+
+# Mine git commit logs
+python miner.py --git
+
+# Mine markdown docs (CLAUDE.md, AGENTS.md, docs/*.md)
+python miner.py --markdown
+
+# Mine GitHub issues and commits
+python miner.py --github --github-orgs myorg
+
+# Mine GitLab
+python miner.py --gitlab --gitlab-groups mygroup
+
+# Mine Gitea
+python miner.py --gitea --gitea-orgs ai repos
+
+# All sources combined
+python miner.py --git --markdown --github --gitlab --gitea --workers 4
 
 # Only files since a date
 python miner.py --since 2026-04-01
 
-# Test with first 5 files
-python miner.py --limit 5 --dry-run
-
-# Resume after crash — just re-run, checkpoint handles skip
+# Resume after crash — just re-run, checkpoint skips done files
 python miner.py
 ```
 
-## Checkpoint
-`checkpoint.json` persists after every file. Safe to kill with Ctrl+C and resume.
+## Configuration
 
-## Logs
-`miner.log` in the same directory.
+All config via environment variables (copy `.env.example` → `.env`):
+
+| Variable | Purpose |
+|---|---|
+| `FLEET_MEMORY_URL` | MCP server endpoint (default: `http://127.0.0.1:8800/mcp`) |
+| `GITHUB_TOKEN` | GitHub personal access token |
+| `GITLAB_TOKEN` | GitLab personal access token |
+| `GITEA_TOKEN` | Gitea token (or falls back to git credential store) |
+| `GITEA_URL` | Gitea base URL (default: `http://127.0.0.1:3000`) |
+| `ANTHROPIC_API_KEY` | Anthropic API key (highest priority LLM provider) |
+| `LLM_BASE_URL` | Any OpenAI-compatible endpoint base URL |
+| `LLM_API_KEY` | API key for OpenAI-compatible endpoint |
+| `OLLAMA_URL` | Ollama URL (default: `http://localhost:11434`) |
+| `PUSHGATEWAY_URL` | Prometheus Pushgateway (optional, empty = disabled) |
+
+## Checkpoint
+
+`checkpoint.json` persists after every file. Safe to kill with Ctrl+C and resume.
+Logs written to `miner.log` in the same directory.

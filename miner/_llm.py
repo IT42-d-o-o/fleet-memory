@@ -1,17 +1,9 @@
 """
 Provider-agnostic LLM client for fleet-memory miner.
-Supports: Ollama, any OpenAI-compatible endpoint (DeepSeek, Kimi, Groq, Together, Gemini, etc.), Anthropic.
 
-Provider detection priority:
-  1. ANTHROPIC_API_KEY set → Anthropic direct API
-  2. LLM_BASE_URL set      → any OpenAI-compatible endpoint
-  3. OLLAMA_URL set        → Ollama at custom URL
-  4. default               → Ollama at localhost:11434
-
-Other env vars:
-  LLM_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY  — cloud provider key
-  LLM_MODEL        — model name override
-  PUSHGATEWAY_URL  — Prometheus Pushgateway URL (empty = telemetry disabled)
+Self-contained (no external lib) to enable standalone distribution.
+Supports Ollama, any OpenAI-compatible endpoint, and Anthropic direct API.
+Priority: ANTHROPIC_API_KEY → LLM_BASE_URL → OLLAMA_URL → localhost:11434
 """
 
 import json

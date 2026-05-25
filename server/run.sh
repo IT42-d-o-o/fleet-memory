@@ -9,7 +9,7 @@ set -e
 if [ "${LLM_PROVIDER:-openai}" = "openai" ] && [ -z "$OPENAI_API_KEY" ]; then
     # Try Vault if token file exists
     if [ -f /etc/memory-mcp/vault-token ]; then
-        export VAULT_ADDR=${VAULT_ADDR:-http://10.10.10.107:8200}
+        export VAULT_ADDR=${VAULT_ADDR:?ERROR: VAULT_ADDR must be set when using vault-token}
         VAULT_TOKEN=$(cat /etc/memory-mcp/vault-token)
         export VAULT_TOKEN
         OPENAI_API_KEY=$(vault kv get -field=openai_api secret/Mem0)
