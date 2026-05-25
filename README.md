@@ -59,11 +59,15 @@ Claude Code — add to MCP settings:
   "mcpServers": {
     "memory-mcp": {
       "type": "http",
-      "url": "http://127.0.0.1:8800/mcp"
+      "url": "http://127.0.0.1:8800/mcp",
+      "headers": {
+        "Authorization": "Bearer <your-MCP_AUTH_TOKEN>"
+      }
     }
   }
 }
 ```
+Omit `headers` if `MCP_AUTH_TOKEN` is not set.
 
 Add `onboarding/claude-md-snippet.md` content to your `CLAUDE.md`.
 
@@ -108,6 +112,52 @@ The miner backfills from all major AI coding tools:
 - [FastMCP](https://github.com/jlowin/fastmcp) — MCP server framework (MIT)
 
 See `NOTICE` for full attribution.
+
+## What this is NOT
+
+- **Not a RAG system** — no document chunking or PDF ingestion. It stores extracted facts, not raw documents.
+- **Not a long-term knowledge base** — mem0 deduplicates and overwrites stale facts; it's a live memory, not an archive.
+- **Not multi-tenant** — single namespace (`fleet`) shared by all agents. Namespace isolation (`MEM0_NAMESPACE`) is available but there is no auth-per-namespace.
+- **Not a replacement for structured storage** — don't store logs, metrics, or relational data here. Store observations and decisions.
+- **Not production-hardened for public internet** — set `MCP_AUTH_TOKEN` and put it behind a reverse proxy with TLS before exposing externally.
+
+## Backup and restore
+
+**Docker:**
+```bash
+# Backup Qdrant data volume
+docker run --rm -v fleet-memory_qdrant_data:/data -v $(pwd):/out alpine \
+  tar czf /out/qdrant-backup-$(date +%Y%m%d).tar.gz /data
+
+# Restore
+docker run --rm -v fleet-memory_qdrant_data:/data -v $(pwd):/out alpine \
+  tar xzf /out/qdrant-backup-YYYYMMDD.tar.gz -C /
+```
+
+**Systemd:**
+```bash
+systemctl stop memory-mcp
+tar czf qdrant-backup.tar.gz /opt/qdrant/storage
+cp /opt/memory-mcp/history.db history.db.bak
+systemctl start memory-mcp
+```
+
+## Upgrade
+
+**Docker:**
+```bash
+git pull
+docker compose up -d --build
+```
+
+**Systemd:**
+```bash
+git -C /opt/fleet-memory pull
+pip install -r /opt/fleet-memory/server/requirements.txt --upgrade
+systemctl restart memory-mcp
+```
+
+**Embedding model change:** if you switch from one embedder to another (e.g. OpenAI → fastembed), the Qdrant collection must be rebuilt because vector dimensions differ. Delete and recreate: `docker compose down -v && docker compose up -d`.
 
 ## Requirements
 
