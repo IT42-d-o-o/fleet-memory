@@ -24,6 +24,7 @@ Environment=LLM_TEXTFILE_METRIC=/var/lib/node_exporter/textfile_collector/memory
 Environment=LLM_PROVIDER=openai
 Environment=MEM0_LLM_MODEL=gpt-4o-mini
 Environment=MEM0_EMBED_MODEL=text-embedding-3-small
+EnvironmentFile=-/etc/memory-mcp/env
 ExecStart=/opt/memory-mcp/run.sh
 Restart=always
 RestartSec=5

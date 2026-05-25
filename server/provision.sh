@@ -64,7 +64,7 @@ chown qdrant:qdrant /opt/qdrant/config/config.yaml
 
 # --- 3. memory-mcp Python env -------------------------------------------
 echo "--- installing memory-mcp ---"
-useradd -r -s /bin/false memory-mcp 2>/dev/null || true
+useradd -r -s /bin/false -d /home/memory-mcp -m memory-mcp 2>/dev/null || true
 mkdir -p /opt/memory-mcp
 python3 -m venv /opt/memory-mcp/venv
 /opt/memory-mcp/venv/bin/pip install -q --upgrade pip
@@ -87,14 +87,15 @@ sed -i "s|Environment=MEM0_LLM_MODEL=gpt-4o-mini|Environment=MEM0_LLM_MODEL=${ME
 sed -i "s|Environment=MEM0_EMBED_MODEL=text-embedding-3-small|Environment=MEM0_EMBED_MODEL=${MEM0_EMBED_MODEL}|" \
     /etc/systemd/system/memory-mcp.service
 
+# Write credentials to a protected env file (not baked into the unit)
+mkdir -p /etc/memory-mcp
 if [ "$LLM_PROVIDER" = "openai" ]; then
-    # Write key to unit. For Vault-integrated deploys, use run.sh vault-token approach instead.
-    sed -i "/Environment=LLM_PROVIDER=/a Environment=OPENAI_API_KEY=${OPENAI_API_KEY}" \
-        /etc/systemd/system/memory-mcp.service
+    printf 'OPENAI_API_KEY=%s\n' "${OPENAI_API_KEY}" > /etc/memory-mcp/env
 elif [ "$LLM_PROVIDER" = "ollama" ]; then
-    sed -i "/Environment=LLM_PROVIDER=/a Environment=OLLAMA_URL=${OLLAMA_URL}" \
-        /etc/systemd/system/memory-mcp.service
+    printf 'OLLAMA_URL=%s\n' "${OLLAMA_URL}" > /etc/memory-mcp/env
 fi
+chmod 600 /etc/memory-mcp/env
+chown memory-mcp:memory-mcp /etc/memory-mcp/env
 
 # --- 5. Enable and start -------------------------------------------------
 systemctl daemon-reload
