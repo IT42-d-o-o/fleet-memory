@@ -31,15 +31,21 @@ docs/           LLM backend guide, backfill docs
 
 ### 1. Deploy server
 
+**Option A — Docker (any OS, recommended for local use):**
+
 ```bash
-# OpenAI (best quality):
+cp .env.example .env
+# Edit .env — set OPENAI_API_KEY or switch to Ollama
+docker compose up -d
+```
+
+Endpoint: `http://localhost:8800/mcp`
+
+**Option B — Linux systemd (production, Debian/Ubuntu):**
+
+```bash
 export LLM_PROVIDER=openai
 export OPENAI_API_KEY=sk-...
-bash server/provision.sh
-
-# OR Ollama (local, free):
-export LLM_PROVIDER=ollama
-export OLLAMA_URL=http://127.0.0.1:11434
 bash server/provision.sh
 ```
 
