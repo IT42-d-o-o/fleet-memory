@@ -864,9 +864,9 @@ def main():
     parser.add_argument("--since", help="Only process files newer than YYYY-MM-DD")
     parser.add_argument("--limit", type=int, help="Max files to process this run")
     parser.add_argument("--skip-subagents", action="store_true", help="Skip files inside subagents/ subdirectories")
-    parser.add_argument("--no-transcripts", action="store_true", help="Skip transcript processing (run only --git/--gitea sources)")
+    parser.add_argument("--no-transcripts", action="store_true", help="Skip transcript processing (run only forge/git/markdown sources)")
     parser.add_argument("--workers", type=int, default=1, help="Parallel worker threads (default: 1)")
-    parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Ollama model (default: {DEFAULT_MODEL})")
+    parser.add_argument("--model", default=DEFAULT_MODEL, help="LLM model for extraction (default: LLM_MODEL env var, fallback qwen3:8b)")
     parser.add_argument("--checkpoint", help="Custom checkpoint file path (default: checkpoint.json)")
     parser.add_argument("--markdown", action="store_true", help="Also mine markdown docs from project repos")
     parser.add_argument("--markdown-roots", nargs="+", type=Path, default=MARKDOWN_ROOTS_DEFAULT,
