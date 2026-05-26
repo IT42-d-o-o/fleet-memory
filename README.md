@@ -1,3 +1,5 @@
+[![CI](https://github.com/IT42-d-o-o/fleet-memory/actions/workflows/ci.yml/badge.svg)](https://github.com/IT42-d-o-o/fleet-memory/actions/workflows/ci.yml)
+
 # fleet-memory
 
 Shared AI agent memory — mem0 + Qdrant + MCP server + backfill miner.
