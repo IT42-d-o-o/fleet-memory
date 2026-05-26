@@ -50,3 +50,35 @@ Write to memory-mcp when:
 - **User corrects behavior**: preference or constraint → `user`
 
 Always tag `metadata: {"category": "<type>"}`. Never write secrets — reference paths only.
+
+### Example writes
+
+```python
+# After solving a non-obvious bug:
+add_memory(
+    content="SQLite WAL mode must be enabled before first write or concurrent reads deadlock under load",
+    agent="claude",
+    metadata={"category": "lesson"}
+)
+
+# After learning a user preference:
+add_memory(
+    content="User prefers single bundled PRs over many small ones for refactors",
+    agent="claude",
+    metadata={"category": "user"}
+)
+
+# After discovering a tool endpoint:
+add_memory(
+    content="Fleet memory MCP endpoint: http://192.168.1.10:8800/mcp — streamable-HTTP transport",
+    agent="claude",
+    metadata={"category": "tool"}
+)
+```
+
+### What NOT to store
+
+- Raw code, file contents, stack traces — store the insight, not the artifact
+- Facts already in the codebase or docs — memory is for non-obvious, cross-session knowledge
+- Secrets or credentials — store Vault paths or references only
+- Noise from routine tasks — only write when something is worth knowing in a future session
