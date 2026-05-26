@@ -86,10 +86,15 @@ Add `onboarding/claude-md-snippet.md` content to your `CLAUDE.md`.
 cd miner/
 cp .env.example .env   # edit: set FLEET_MEMORY_URL and your LLM provider
 pip install httpx python-dotenv
-python miner.py --workers 4
+
+python miner.py --workers 4                          # Claude transcripts (default)
+python miner.py --github --github-orgs myorg         # GitHub issues + commits
+python miner.py --gitlab --gitlab-groups mygroup     # GitLab issues + commits
+python miner.py --gitea --gitea-orgs myorg           # Gitea issues + commits
+python miner.py --git --git-roots ~/Projects         # local git repos
 ```
 
-See `docs/backfill.md` for all options.
+GitHub Enterprise and GitLab self-hosted are supported via `--github-url` / `--gitlab-url`. See `docs/backfill.md` for all options.
 
 ## MCP tools
 
@@ -116,9 +121,9 @@ environment:
 
 **mem0 telemetry:** mem0 sends anonymous usage data to PostHog. To disable, set `MEM0_TELEMETRY=false` in your `.env`.
 
-## Transcript sources
+## Miner sources
 
-The miner backfills from all major AI coding tools:
+**AI transcripts** — all major coding tools:
 
 | Tool | Path |
 |------|------|
@@ -127,6 +132,14 @@ The miner backfills from all major AI coding tools:
 | Antigravity (Google) | `~/.gemini/antigravity/brain/<uuid>/.system_generated/logs/transcript.jsonl` |
 | Cursor | `~/.cursor/projects/<workspace>/agent-transcripts/**/*.jsonl` |
 | OpenClaw | `~/.openclaw/agents/<agentId>/sessions/*.jsonl` |
+
+**Code forges** — issues, PRs, and commit messages:
+
+| Forge | Flag | Auth |
+|-------|------|------|
+| GitHub (cloud + Enterprise) | `--github` | `GITHUB_TOKEN` |
+| GitLab (cloud + self-hosted) | `--gitlab` | `GITLAB_TOKEN` |
+| Gitea (self-hosted) | `--gitea` | `GITEA_TOKEN` or git credential store |
 
 ## Built on
 
