@@ -4,6 +4,15 @@ Shared AI agent memory — mem0 + Qdrant + MCP server + backfill miner.
 
 All your AI agents (Claude, Codex, Qwen, Gemini) share a single memory pool. Agents read past decisions, lessons, and context. They write back what they learn. Memory persists across sessions and tools.
 
+## Why
+
+Every AI session starts blank. Claude asks the same questions. Agents repeat the same mistakes. Work done in one tool is invisible to every other tool.
+
+fleet-memory is a self-hosted memory layer: agents write facts, lessons, and decisions once; every other agent reads them. Built for teams running 2+ AI agents that need to share state without a human relaying context between sessions.
+
+**Before:** five agents, five isolated views of the same project.  
+**After:** one shared memory pool — Claude writes a decision at 9am, Codex reads it at 3pm.
+
 ## How it works
 
 ```
@@ -92,6 +101,20 @@ See `docs/backfill.md` for all options.
 ## LLM backends
 
 See `docs/llm-backends.md`. Short version: OpenAI gives best quality; Ollama is free but lower recall on terse content.
+
+## Cost and privacy
+
+**LLM calls:** every `add_memory` call makes **2 LLM API calls** — one to extract the fact, one to classify it as ADD/UPDATE/DELETE against existing memory. Running the miner on large transcript archives (thousands of files) will generate meaningful API spend. Estimate before running at scale; use `--dry-run` first.
+
+**Data leaves the machine:** the miner sends raw transcript text to your configured LLM to extract facts. If you use OpenAI or any cloud LLM, that content transits their API. To keep all data local, use Ollama (`LLM_PROVIDER=ollama`) — no data leaves your host.
+
+**Qdrant telemetry:** Qdrant collects anonymous usage telemetry by default. To disable, add to `docker-compose.yml` under the `qdrant` service:
+```yaml
+environment:
+  - QDRANT__TELEMETRY_DISABLED=true
+```
+
+**mem0 telemetry:** mem0 sends anonymous usage data to PostHog. To disable, set `MEM0_TELEMETRY=false` in your `.env`.
 
 ## Transcript sources
 

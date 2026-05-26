@@ -13,6 +13,12 @@ FastMCP     Copyright (c) FastMCP contributors
             MIT License
             https://github.com/jlowin/fastmcp
 
+fastembed   Copyright (c) Qdrant
+            MIT License
+            https://github.com/qdrant/fastembed
+            (The BAAI/bge-small-en-v1.5 model is pre-baked into the Docker image
+            at build time. The model weights are published by BAAI under MIT License.)
+
 -------------------------------------------------------------------------------
 
                                  Apache License
