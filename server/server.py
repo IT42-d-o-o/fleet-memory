@@ -8,8 +8,8 @@ LLM backend is env-var-driven:
   LLM_PROVIDER=openai  (default) — requires OPENAI_API_KEY
   LLM_PROVIDER=ollama             — requires OLLAMA_URL (default http://127.0.0.1:11434)
 
-The OpenAI key is injected at runtime by run.sh from Vault (IT42 setup) or
-set directly in the environment (standalone/product installs).
+The OpenAI key is injected at runtime by run.sh from Vault or set directly
+in the environment.
 """
 import os
 import sys
