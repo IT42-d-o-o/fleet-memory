@@ -26,6 +26,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
@@ -199,12 +200,25 @@ Output valid JSON only, no markdown fences, no explanation text."""
 _log_lock = threading.Lock()
 _mem_write_sem = threading.Semaphore(2)  # max 2 concurrent fleet-memory writes
 
+VERBOSE = False  # set by --verbose flag in main()
 
-def log(msg: str):
+
+def log(msg: str, verbose: bool = False):
+    if verbose and not VERBOSE:
+        return
     ts = datetime.now().strftime("%H:%M:%S")
     line = f"[{ts}] {msg}"
     with _log_lock:
         print(line)
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+
+
+def log_error(msg: str):
+    ts = datetime.now().strftime("%H:%M:%S")
+    line = f"[{ts}] ERROR: {msg}"
+    with _log_lock:
+        print(line, file=sys.stderr)
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(line + "\n")
 
@@ -265,7 +279,7 @@ def parse_claude_transcript(path: Path) -> str:
                                 if t:
                                     parts.append(f"CLAUDE: {t[:500]}")
     except Exception as e:
-        log(f"  parse error {path.name}: {e}")
+        log_error(f"parse error {path.name}: {type(e).__name__}: {e}")
     return "\n".join(parts)
 
 
@@ -300,7 +314,7 @@ def parse_codex_transcript(path: Path) -> str:
                             max_len = 2000 if role == "user" else 500
                             parts.append(f"{label}: {text[:max_len]}")
     except Exception as e:
-        log(f"  parse error {path.name}: {e}")
+        log_error(f"parse error {path.name}: {type(e).__name__}: {e}")
     return "\n".join(parts)
 
 
@@ -332,7 +346,7 @@ def parse_antigravity_transcript(path: Path) -> str:
                 if content and not obj.get("tool_calls"):
                     parts.append(f"ANTIGRAVITY: {content.strip()[:500]}")
     except Exception as e:
-        log(f"  parse error {path.name}: {e}")
+        log_error(f"parse error {path.name}: {type(e).__name__}: {e}")
     return "\n\n".join(parts)
 
 
@@ -371,7 +385,7 @@ def parse_cursor_transcript(path: Path) -> str:
                 max_len = 2000 if role == "user" else 500
                 parts.append(f"{label}: {text[:max_len]}")
     except Exception as e:
-        log(f"  parse error {path.name}: {e}")
+        log_error(f"parse error {path.name}: {type(e).__name__}: {e}")
     return "\n".join(parts)
 
 
@@ -408,7 +422,7 @@ def parse_openclaw_transcript(path: Path) -> str:
                 max_len = 2000 if role == "user" else 500
                 parts.append(f"{label}: {text[:max_len]}")
     except Exception as e:
-        log(f"  parse error {path.name}: {e}")
+        log_error(f"parse error {path.name}: {type(e).__name__}: {e}")
     return "\n".join(parts)
 
 
@@ -416,7 +430,7 @@ def parse_markdown_file(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8", errors="replace")
     except Exception as e:
-        log(f"  parse error {path.name}: {e}")
+        log_error(f"parse error {path.name}: {type(e).__name__}: {e}")
         return ""
 
 
@@ -451,6 +465,7 @@ def parse_git_log(repo_path: Path) -> str:
             cwd=repo_path, capture_output=True, text=True, timeout=30, encoding="utf-8", errors="replace"
         )
         if result.returncode != 0:
+            log_error(f"git log failed in {repo_path.name} (rc={result.returncode}): {result.stderr.strip()[:200]}")
             return ""
         lines = []
         for line in result.stdout.splitlines():
@@ -466,7 +481,7 @@ def parse_git_log(repo_path: Path) -> str:
             lines.append(line)
         return "\n".join(lines).strip()
     except Exception as e:
-        log(f"  git log error {repo_path.name}: {e}")
+        log_error(f"git log error {repo_path.name}: {type(e).__name__}: {e}")
         return ""
 
 
@@ -507,7 +522,7 @@ def _extract_and_write(
     for batch_start in range(0, total_chunks, BATCH_SIZE):
         batch = chunks[batch_start:batch_start + BATCH_SIZE]
         batch_end = min(batch_start + BATCH_SIZE, total_chunks)
-        log(f"  [{label}] chunks {batch_start+1}-{batch_end}/{total_chunks} ({sum(len(c) for c in batch)} chars) → ollama [{model}]")
+        log(f"  [{label}] chunks {batch_start+1}-{batch_end}/{total_chunks} ({sum(len(c) for c in batch)} chars) → llm [{model}]")
         items = call_ollama(batch, model, system=system_prompt)
         log(f"  [{label}] extracted {len(items)} items")
         for item in items:
@@ -557,7 +572,7 @@ def run_forge_pipeline(
     try:
         repo_list = client.list_repos()
     except Exception as e:
-        log(f"{forge_label}: failed to list repos: {e}")
+        log_error(f"{forge_label}: failed to list repos: {type(e).__name__}: {e}")
         return 0
     log(f"Found {len(repo_list)} {forge_label} repos")
 
@@ -602,7 +617,8 @@ def run_forge_pipeline(
                 log(f"  wrote {n} facts")
             return max(n, 0)
         except Exception as e:
-            log(f"  ERROR: {e}")
+            log_error(f"{forge_label} {owner}/{repo}: {type(e).__name__}: {e}")
+            log(traceback.format_exc(), verbose=True)
             return 0
 
     facts = 0
@@ -661,7 +677,8 @@ def call_ollama(chunks: list[str], model: str, system: str | None = None) -> lis
             log(f"  salvaged objects from malformed JSON")
         return items
     except Exception as e:
-        log(f"  ollama error: {e}")
+        log_error(f"LLM extraction failed (model={model}): {type(e).__name__}: {e}")
+        log(traceback.format_exc(), verbose=True)
         return []
 
 
@@ -699,14 +716,16 @@ def add_to_fleet_memory(content: str, category: str, dry_run: bool) -> bool:
             body = resp.json()
             if body.get("result", {}).get("isError"):
                 err = body["result"].get("content", [{}])[0].get("text", "unknown")
-                log(f"  fleet memory write error: {err[:120]}")
+                log_error(f"fleet memory rejected write: {err[:120]}")
                 return False
             return True
         except Exception as e:
             if attempt < 2:
-                time.sleep(8 * (attempt + 1))
+                sleep_secs = 8 * (attempt + 1)
+                log(f"  fleet memory write failed (attempt {attempt+1}/3): {type(e).__name__}: {e} — retry in {sleep_secs}s")
+                time.sleep(sleep_secs)
             else:
-                log(f"  fleet memory write error (gave up after 3 attempts): {e}")
+                log_error(f"fleet memory write gave up after 3 attempts: {type(e).__name__}: {e}")
                 return False
     return False
 
@@ -818,7 +837,7 @@ def process_file(path: Path, source: str, known_hash: str | None, dry_run: bool,
     for batch_start in range(0, total_chunks, BATCH_SIZE):
         batch = chunks[batch_start:batch_start + BATCH_SIZE]
         batch_end = min(batch_start + BATCH_SIZE, total_chunks)
-        log(f"  chunks {batch_start+1}-{batch_end}/{total_chunks} ({sum(len(c) for c in batch)} chars) → ollama [{model}]")
+        log(f"  chunks {batch_start+1}-{batch_end}/{total_chunks} ({sum(len(c) for c in batch)} chars) → llm [{model}]")
         items = call_ollama(batch, model, system=system_prompt)
         log(f"  extracted {len(items)} items")
         for item in items:
@@ -841,6 +860,7 @@ def process_file(path: Path, source: str, known_hash: str | None, dry_run: bool,
 def main():
     parser = argparse.ArgumentParser(description="Mine session transcripts into fleet memory")
     parser.add_argument("--dry-run", action="store_true", help="Extract but don't write to fleet memory")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose debug logging (exception tracebacks, retry details)")
     parser.add_argument("--since", help="Only process files newer than YYYY-MM-DD")
     parser.add_argument("--limit", type=int, help="Max files to process this run")
     parser.add_argument("--skip-subagents", action="store_true", help="Skip files inside subagents/ subdirectories")
@@ -870,6 +890,9 @@ def main():
     parser.add_argument("--skip-repos", nargs="+", default=[],
                         help="Repos to skip, format owner/repo — applies to all forges")
     args = parser.parse_args()
+
+    global VERBOSE
+    VERBOSE = args.verbose
 
     if args.checkpoint:
         global CHECKPOINT_FILE
@@ -955,7 +978,8 @@ def main():
                 log(f"  wrote {n} facts")
             return max(n, 0)
         except Exception as e:
-            log(f"  ERROR: {e}")
+            log_error(f"{source} {rel}: {type(e).__name__}: {e}")
+            log(traceback.format_exc(), verbose=True)
             with cp_lock:
                 cp["stats"]["errors"] += 1
                 save_checkpoint(cp)
@@ -977,16 +1001,39 @@ def main():
         if not gh_token:
             log("GitHub: GITHUB_TOKEN not set — skipping")
         else:
-            gh_client = GitHubForgeClient(token=gh_token, base_url=args.github_url, orgs=args.github_orgs)
-            total_facts += run_forge_pipeline(gh_client, "github", skip_set, cp, cp_lock, args)
+            try:
+                r = httpx.get(
+                    f"{args.github_url}/user",
+                    headers={"Authorization": f"Bearer {gh_token}", "Accept": "application/vnd.github+json"},
+                    timeout=10
+                )
+                r.raise_for_status()
+                username = r.json().get("login", "?")
+                log(f"GitHub: authenticated as {username}")
+                gh_client = GitHubForgeClient(token=gh_token, base_url=args.github_url, orgs=args.github_orgs)
+                total_facts += run_forge_pipeline(gh_client, "github", skip_set, cp, cp_lock, args)
+            except Exception as e:
+                log_error(f"GitHub: token validation failed — {type(e).__name__}: {e} — skipping")
 
     if args.gitlab:
         gl_token = os.getenv("GITLAB_TOKEN", "")
         if not gl_token:
             log("GitLab: GITLAB_TOKEN not set — skipping")
         else:
-            gl_client = GitLabForgeClient(token=gl_token, base_url=args.gitlab_url, groups=args.gitlab_groups)
-            total_facts += run_forge_pipeline(gl_client, "gitlab", skip_set, cp, cp_lock, args)
+            api_base = args.gitlab_url.rstrip("/")
+            try:
+                r = httpx.get(
+                    f"{api_base}/api/v4/user",
+                    headers={"PRIVATE-TOKEN": gl_token},
+                    timeout=10
+                )
+                r.raise_for_status()
+                username = r.json().get("username", "?")
+                log(f"GitLab: authenticated as {username}")
+                gl_client = GitLabForgeClient(token=gl_token, base_url=args.gitlab_url, groups=args.gitlab_groups)
+                total_facts += run_forge_pipeline(gl_client, "gitlab", skip_set, cp, cp_lock, args)
+            except Exception as e:
+                log_error(f"GitLab: token validation failed — {type(e).__name__}: {e} — skipping")
 
     if args.gitea:
         gitea_token = os.getenv("GITEA_TOKEN", "")
