@@ -50,6 +50,13 @@ docker compose up -d
 
 Endpoint: `http://localhost:8800/mcp`
 
+> **Proxmox LXC users:** Docker's AppArmor profile cannot be applied from inside an LXC namespace. Both `docker compose build` and `docker compose up` fail with `unable to apply apparmor profile`. Fix:
+> ```bash
+> cp docker-compose.override.yml.example docker-compose.override.yml
+> docker compose up -d
+> ```
+> Not needed on bare metal, standard VMs, or Docker Desktop.
+
 **Option B — Linux systemd (production, Debian/Ubuntu):**
 
 ```bash
