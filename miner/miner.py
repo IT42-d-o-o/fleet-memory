@@ -54,7 +54,18 @@ CHECKPOINT_FILE = Path(__file__).parent / "checkpoint.json"
 LOG_FILE = Path(__file__).parent / "miner.log"
 
 FLEET_MEMORY_URL = os.getenv("FLEET_MEMORY_URL", "http://127.0.0.1:8800/mcp")
-DEFAULT_MODEL = os.getenv("LLM_MODEL", "qwen3:8b")
+def _infer_default_model() -> str | None:
+    if m := os.getenv("LLM_MODEL"):
+        return m
+    if os.getenv("ANTHROPIC_API_KEY"):
+        return "claude-haiku-4-5-20251001"
+    if os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY"):
+        return "gpt-4o-mini"
+    if os.getenv("OLLAMA_URL"):
+        return "qwen3:8b"
+    return None
+
+DEFAULT_MODEL = _infer_default_model()
 
 # Markdown mining — project repos (set PROJECTS_ROOT env var or pass --markdown-roots)
 MARKDOWN_ROOTS_DEFAULT = None  # must be provided at runtime
@@ -866,7 +877,7 @@ def main():
     parser.add_argument("--skip-subagents", action="store_true", help="Skip files inside subagents/ subdirectories")
     parser.add_argument("--no-transcripts", action="store_true", help="Skip transcript processing (run only forge/git/markdown sources)")
     parser.add_argument("--workers", type=int, default=1, help="Parallel worker threads (default: 1)")
-    parser.add_argument("--model", default=DEFAULT_MODEL, help="LLM model for extraction (default: LLM_MODEL env var, fallback qwen3:8b)")
+    parser.add_argument("--model", default=DEFAULT_MODEL, help="LLM model for extraction (inferred from env if not set: OpenAI→gpt-4o-mini, Anthropic→claude-haiku, Ollama→qwen3:8b)")
     parser.add_argument("--checkpoint", help="Custom checkpoint file path (default: checkpoint.json)")
     parser.add_argument("--markdown", action="store_true", help="Also mine markdown docs from project repos")
     parser.add_argument("--markdown-roots", nargs="+", type=Path, default=MARKDOWN_ROOTS_DEFAULT,
@@ -893,6 +904,13 @@ def main():
 
     global VERBOSE
     VERBOSE = args.verbose
+
+    if not args.model:
+        print("ERROR: no LLM model configured. Set LLM_MODEL in .env or pass --model.", file=sys.stderr)
+        print("  OpenAI:    LLM_API_KEY=sk-...  LLM_MODEL=gpt-4o-mini", file=sys.stderr)
+        print("  Anthropic: ANTHROPIC_API_KEY=sk-ant-...  LLM_MODEL=claude-haiku-4-5-20251001", file=sys.stderr)
+        print("  Ollama:    OLLAMA_URL=http://localhost:11434  LLM_MODEL=qwen3:8b", file=sys.stderr)
+        sys.exit(1)
 
     if args.checkpoint:
         global CHECKPOINT_FILE
