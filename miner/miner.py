@@ -53,7 +53,7 @@ CHECKPOINT_FILE = Path(__file__).parent / "checkpoint.json"
 LOG_FILE = Path(__file__).parent / "miner.log"
 
 FLEET_MEMORY_URL = os.getenv("FLEET_MEMORY_URL", "http://127.0.0.1:8800/mcp")
-DEFAULT_MODEL = "qwen3:8b"
+DEFAULT_MODEL = os.getenv("LLM_MODEL", "qwen3:8b")
 
 # Markdown mining — project repos (set PROJECTS_ROOT env var or pass --markdown-roots)
 MARKDOWN_ROOTS_DEFAULT = None  # must be provided at runtime
