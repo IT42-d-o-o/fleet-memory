@@ -20,6 +20,7 @@ import argparse
 import hashlib
 import io
 import json
+import logging
 import os
 import re
 import subprocess
@@ -41,6 +42,7 @@ except ImportError:
 
 from _llm import create_llm_client, push_tokens
 from _forge import GitHubForgeClient, GitLabForgeClient, GiteaForgeClient, get_gitea_credentials, GIT_SKIP_SUBJECTS
+from prompts import EXTRACTION_SYSTEM_PROMPT, MARKDOWN_SYSTEM_PROMPT, GIT_SYSTEM_PROMPT, GITEA_SYSTEM_PROMPT
 
 # Force UTF-8 line-buffered stdout on Windows (fixes PowerShell console lag)
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
@@ -50,10 +52,11 @@ CODEX_SESSIONS_ROOT = Path.home() / ".codex" / "sessions"
 ANTIGRAVITY_BRAIN_ROOT = Path.home() / ".gemini" / "antigravity" / "brain"
 CURSOR_PROJECTS_ROOT = Path.home() / ".cursor" / "projects"
 OPENCLAW_SESSIONS_ROOT = Path.home() / ".openclaw" / "agents"
-CHECKPOINT_FILE = Path(__file__).parent / "checkpoint.json"
 LOG_FILE = Path(__file__).parent / "miner.log"
 
 FLEET_MEMORY_URL = os.getenv("FLEET_MEMORY_URL", "http://127.0.0.1:8800/mcp")
+
+
 def _infer_default_model() -> str | None:
     if m := os.getenv("LLM_MODEL"):
         return m
@@ -65,7 +68,6 @@ def _infer_default_model() -> str | None:
         return "qwen3:8b"
     return None
 
-DEFAULT_MODEL = _infer_default_model()
 
 # Markdown mining — project repos (set PROJECTS_ROOT env var or pass --markdown-roots)
 MARKDOWN_ROOTS_DEFAULT = None  # must be provided at runtime
@@ -89,159 +91,19 @@ GITEA_SKIP_REPOS: set[str] = set()
 # ~3000 words per chunk, rough estimate: 4 chars/word
 CHUNK_CHARS = 12_000
 
-EXTRACTION_SYSTEM_PROMPT = """You are an information extractor. Given a conversation transcript, extract atomic pieces of information that would be valuable to recall in FUTURE sessions with this user. Think: "would a future AI assistant benefit from knowing this?"
-
-Categories:
-- FACT: concrete facts about the user's setup, projects, infrastructure, tools, services, IPs, paths
-- DECISION: architectural or implementation choices made and WHY (e.g. "chose X over Y because Z")
-- PROJECT: completed milestones, stable goals, permanent blockers — NOT in-progress steps
-- LESSON: what failed/succeeded and why — non-obvious, reusable insight applicable beyond this session
-- TOOL: endpoints, file paths, Vault paths, env vars, service addresses
-- USER: user preferences, working style, constraints, expertise
-
-Output ONLY a JSON array of objects. Each object:
-  "category": one of fact/decision/project/lesson/tool/user
-  "content": atomic fact as a clear complete sentence (max 80 words)
-
-STRICT SKIP LIST — output nothing for:
-- In-progress coding steps, file edits, command execution narration ("I will now...", "Running...", "Patching...")
-- TODO items, task lists, P1/P2/P3 priority items, backlog entries
-- Git commit messages, commit hashes, or git log/status output
-- File contents echoed by an agent (tool results, file reads)
-- Errors that were resolved within the same session
-- Small talk, confirmations, acknowledgements
-- Anything already obvious from the code or standard tools
-- Re-statements of existing documentation or memory files the agent read aloud
-- Facts about Claude Code itself: its settings schema, plugin system, marketplace config, hooks syntax, skill framework — extract only facts about the USER's infrastructure, projects, and decisions
-- Specific timestamps, scheduled event times, current file line counts, transient file paths used once
-- Generic software documentation masquerading as facts (e.g. "flag X enables feature Y in tool Z" when Z is a standard tool, not user-built)
-
-Keep content specific: include names, IPs, paths, version numbers when present.
-NEVER include plaintext passwords or secrets — Vault path references only.
-If nothing in this transcript meets the bar, return: []
-Output valid JSON only, no markdown fences, no explanation text.
-
-Example output:
-[
-  {"category": "tool", "content": "ComfyUI runs at 127.0.0.1:8188, started via: docker compose -f C:/AI/services/docker-compose/compose.comfyui.yml up -d"},
-  {"category": "decision", "content": "Chose qwen3-coder:30b over qwen3:8b for transcript mining because extraction quality matters more than speed for institutional knowledge backfill"},
-  {"category": "lesson", "content": "mem0 infer=True dedup does not catch near-duplicates from repeated file reads across sessions; pre-filter tool result content before sending to extraction LLM"}
-]"""
-
-
-MARKDOWN_SYSTEM_PROMPT = """You are an information extractor. Given a documentation file from a software project, extract atomic pieces of information that would be valuable for a future AI assistant to know about this project's infrastructure, architecture, and decisions.
-
-Categories:
-- FACT: concrete facts about setup, infrastructure, tools, services, IPs, paths, versions
-- DECISION: architectural or implementation choices and WHY
-- PROJECT: project goals, active status, permanent blockers, ownership
-- LESSON: what failed/succeeded — non-obvious reusable insight applicable beyond this project
-- TOOL: endpoints, file paths, Vault paths, env vars, service addresses, credentials references
-- USER: user preferences, working constraints, process requirements
-
-Output ONLY a JSON array of objects. Each object:
-  "category": one of fact/decision/project/lesson/tool/user
-  "content": atomic fact as a clear complete sentence (max 80 words)
-
-STRICT SKIP LIST — output nothing for:
-- Generic software documentation (standard tool behavior, not project-specific)
-- Placeholder / example values (e.g. "example.com", "your-api-key", "TODO")
-- Step-by-step procedures — extract the OUTCOME or DECISION, not the steps themselves
-- Redundant facts obvious from names or standard conventions
-- Anything already obvious from standard tooling (e.g. "Docker containers run in isolation")
-- NEVER include plaintext passwords or secrets — Vault path references only
-
-Keep content specific: include names, IPs, ports, versions, CT numbers when present.
-If nothing meets the bar, return: []
-Output valid JSON only, no markdown fences, no explanation text."""
-
-
-GIT_SYSTEM_PROMPT = """You are an information extractor. Given a block of git commit messages from a software project, extract atomic pieces of information that would be valuable for a future AI assistant to know about this project's decisions, architecture, and lessons learned.
-
-Categories:
-- FACT: concrete facts about infrastructure, services, IPs, paths, versions established by this work
-- DECISION: architectural or implementation choices made and WHY (chose X over Y because Z)
-- PROJECT: milestones completed, features shipped, integrations done
-- LESSON: what failed/succeeded — non-obvious reusable insight (bugs fixed with root cause, migration pitfalls)
-- TOOL: endpoints, file paths, Vault paths, env vars, service addresses confirmed by this work
-
-Output ONLY a JSON array of objects. Each object:
-  "category": one of fact/decision/project/lesson/tool/user
-  "content": atomic fact as a clear complete sentence (max 80 words)
-
-STRICT SKIP LIST — output nothing for:
-- Commits that only say "fix typo", "update README", "WIP", "chore: bump version" with no meaningful body
-- Co-Authored-By lines — ignore completely
-- Merge commits
-- Generic refactoring with no architectural significance
-- Anything that is already obvious from code naming conventions
-- NEVER include plaintext passwords or secrets — Vault path references only
-
-Prioritize commits with multi-line bodies — those contain the most valuable context.
-If nothing meets the bar, return: []
-Output valid JSON only, no markdown fences, no explanation text."""
-
-
-GITEA_SYSTEM_PROMPT = """You are an information extractor. Given Gitea/GitHub issue discussions from a software project, extract atomic pieces of information valuable for a future AI assistant to know about this project's bugs, decisions, and lessons.
-
-Categories:
-- FACT: concrete facts about infrastructure, services, IPs, paths, versions confirmed in these issues
-- DECISION: architectural or implementation choices made in issue discussions and WHY
-- PROJECT: features shipped, bugs fixed, integrations completed (closed issues with resolution)
-- LESSON: root causes of bugs, failed approaches, workarounds — non-obvious, reusable
-- TOOL: endpoints, file paths, Vault paths, env vars, service addresses mentioned in issues
-- USER: user preferences or constraints mentioned in issue discussions
-
-Output ONLY a JSON array of objects. Each object:
-  "category": one of fact/decision/project/lesson/tool/user
-  "content": atomic fact as a clear complete sentence (max 80 words)
-
-STRICT SKIP LIST — output nothing for:
-- Generic feature requests with no implementation detail or resolution
-- Questions with no resolved answers in the thread
-- Dependency update issues (Dependabot, Renovate, auto-generated)
-- "Done", "Fixed", "Merged" one-liners with zero context
-- NEVER include plaintext passwords or secrets — Vault path references only
-
-Prioritize closed issues with discussion bodies — those contain resolved, durable knowledge.
-If nothing meets the bar, return: []
-Output valid JSON only, no markdown fences, no explanation text."""
-
-
-_log_lock = threading.Lock()
 _mem_write_sem = threading.Semaphore(2)  # max 2 concurrent fleet-memory writes
 
-VERBOSE = False  # set by --verbose flag in main()
+logger = logging.getLogger("miner")
 
 
-def log(msg: str, verbose: bool = False):
-    if verbose and not VERBOSE:
-        return
-    ts = datetime.now().strftime("%H:%M:%S")
-    line = f"[{ts}] {msg}"
-    with _log_lock:
-        print(line)
-        with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
-
-
-def log_error(msg: str):
-    ts = datetime.now().strftime("%H:%M:%S")
-    line = f"[{ts}] ERROR: {msg}"
-    with _log_lock:
-        print(line, file=sys.stderr)
-        with open(LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
-
-
-def load_checkpoint() -> dict:
-    if CHECKPOINT_FILE.exists():
-        return json.loads(CHECKPOINT_FILE.read_text(encoding="utf-8-sig"))
+def load_checkpoint(path: Path) -> dict:
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8-sig"))
     return {"processed": {}, "stats": {"files": 0, "facts": 0, "errors": 0}}
 
 
-def save_checkpoint(cp: dict):
-    CHECKPOINT_FILE.write_text(json.dumps(cp, indent=2, ensure_ascii=False), encoding="utf-8")
+def save_checkpoint(cp: dict, path: Path):
+    path.write_text(json.dumps(cp, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def file_hash(path: Path) -> str:
@@ -290,7 +152,7 @@ def parse_claude_transcript(path: Path) -> str:
                                 if t:
                                     parts.append(f"CLAUDE: {t[:500]}")
     except Exception as e:
-        log_error(f"parse error {path.name}: {type(e).__name__}: {e}")
+        logger.error(f"parse error {path.name}: {type(e).__name__}: {e}")
     return "\n".join(parts)
 
 
@@ -325,7 +187,7 @@ def parse_codex_transcript(path: Path) -> str:
                             max_len = 2000 if role == "user" else 500
                             parts.append(f"{label}: {text[:max_len]}")
     except Exception as e:
-        log_error(f"parse error {path.name}: {type(e).__name__}: {e}")
+        logger.error(f"parse error {path.name}: {type(e).__name__}: {e}")
     return "\n".join(parts)
 
 
@@ -357,7 +219,7 @@ def parse_antigravity_transcript(path: Path) -> str:
                 if content and not obj.get("tool_calls"):
                     parts.append(f"ANTIGRAVITY: {content.strip()[:500]}")
     except Exception as e:
-        log_error(f"parse error {path.name}: {type(e).__name__}: {e}")
+        logger.error(f"parse error {path.name}: {type(e).__name__}: {e}")
     return "\n\n".join(parts)
 
 
@@ -396,7 +258,7 @@ def parse_cursor_transcript(path: Path) -> str:
                 max_len = 2000 if role == "user" else 500
                 parts.append(f"{label}: {text[:max_len]}")
     except Exception as e:
-        log_error(f"parse error {path.name}: {type(e).__name__}: {e}")
+        logger.error(f"parse error {path.name}: {type(e).__name__}: {e}")
     return "\n".join(parts)
 
 
@@ -433,7 +295,7 @@ def parse_openclaw_transcript(path: Path) -> str:
                 max_len = 2000 if role == "user" else 500
                 parts.append(f"{label}: {text[:max_len]}")
     except Exception as e:
-        log_error(f"parse error {path.name}: {type(e).__name__}: {e}")
+        logger.error(f"parse error {path.name}: {type(e).__name__}: {e}")
     return "\n".join(parts)
 
 
@@ -441,7 +303,7 @@ def parse_markdown_file(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8", errors="replace")
     except Exception as e:
-        log_error(f"parse error {path.name}: {type(e).__name__}: {e}")
+        logger.error(f"parse error {path.name}: {type(e).__name__}: {e}")
         return ""
 
 
@@ -476,7 +338,7 @@ def parse_git_log(repo_path: Path) -> str:
             cwd=repo_path, capture_output=True, text=True, timeout=30, encoding="utf-8", errors="replace"
         )
         if result.returncode != 0:
-            log_error(f"git log failed in {repo_path.name} (rc={result.returncode}): {result.stderr.strip()[:200]}")
+            logger.error(f"git log failed in {repo_path.name} (rc={result.returncode}): {result.stderr.strip()[:200]}")
             return ""
         lines = []
         for line in result.stdout.splitlines():
@@ -484,7 +346,6 @@ def parse_git_log(repo_path: Path) -> str:
             # Drop Co-Authored-By and empty separator lines between commits
             if stripped.lower().startswith("co-authored-by"):
                 continue
-            subject_lower = stripped.lower()
             if stripped.startswith("COMMIT: "):
                 subj = stripped[8:].lower()
                 if any(subj.startswith(s) for s in GIT_SKIP_SUBJECTS):
@@ -492,7 +353,7 @@ def parse_git_log(repo_path: Path) -> str:
             lines.append(line)
         return "\n".join(lines).strip()
     except Exception as e:
-        log_error(f"git log error {repo_path.name}: {type(e).__name__}: {e}")
+        logger.error(f"git log error {repo_path.name}: {type(e).__name__}: {e}")
         return ""
 
 
@@ -522,20 +383,123 @@ def find_git_repos(roots: list[Path]) -> list[tuple[Path, str]]:
     return sorted(results, key=lambda x: x[0].name)
 
 
+# Static dispatch table: source → (parser_fn, system_prompt)
+PARSERS: dict[str, tuple] = {
+    "claude":      (parse_claude_transcript,      None),
+    "codex":       (parse_codex_transcript,       None),
+    "antigravity": (parse_antigravity_transcript,  None),
+    "cursor":      (parse_cursor_transcript,      None),
+    "openclaw":    (parse_openclaw_transcript,    None),
+    "markdown":    (parse_markdown_file,          MARKDOWN_SYSTEM_PROMPT),
+    "git":         (parse_git_log,                GIT_SYSTEM_PROMPT),
+}
+
+
+def chunk_text(text: str) -> list[str]:
+    """Split text into chunks of ~CHUNK_CHARS characters."""
+    if len(text) <= CHUNK_CHARS:
+        return [text] if text.strip() else []
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + CHUNK_CHARS
+        if end < len(text):
+            # split at newline boundary
+            boundary = text.rfind("\n", start, end)
+            if boundary > start:
+                end = boundary
+        chunks.append(text[start:end].strip())
+        start = end
+    return [c for c in chunks if c]
+
+
+def extract_facts(chunk: str, model: str, system: str | None = None) -> list[dict]:
+    """Send one text chunk to LLM backend, return extracted fact objects. Pushes token telemetry."""
+    client = create_llm_client(model=model)
+    prompt = system or EXTRACTION_SYSTEM_PROMPT
+    if system == MARKDOWN_SYSTEM_PROMPT:
+        label = "document"
+    elif system == GIT_SYSTEM_PROMPT:
+        label = "git commit log"
+    elif system == GITEA_SYSTEM_PROMPT:
+        label = "Gitea issues"
+    else:
+        label = "transcript"
+    try:
+        items, response = client.extract_json(
+            system=prompt,
+            user=f"Extract information from this {label}:\n\n{chunk}",
+        )
+        push_tokens(model, response.input_tokens, response.output_tokens, app="transcript-miner")
+        if len(items) != len([i for i in items if isinstance(i, dict)]):
+            logger.info("  salvaged objects from malformed JSON")
+        return items
+    except Exception as e:
+        logger.error(f"LLM extraction failed (model={model}): {type(e).__name__}: {e}")
+        logger.debug(traceback.format_exc())
+        return []
+
+
+def add_to_fleet_memory(content: str, category: str, dry_run: bool) -> bool:
+    """Write one fact to fleet memory via MCP HTTP."""
+    if dry_run:
+        logger.info(f"  [DRY] [{category}] {content[:80]}")
+        return True
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "add_memory",
+            "arguments": {
+                "content": content,
+                "agent": "transcript-miner",
+                "metadata": {"category": category}
+            }
+        }
+    }
+    for attempt in range(3):
+        try:
+            with _mem_write_sem:
+                resp = httpx.post(
+                    FLEET_MEMORY_URL,
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    timeout=180
+                )
+            resp.raise_for_status()
+            body = resp.json()
+            if body.get("result", {}).get("isError"):
+                err = body["result"].get("content", [{}])[0].get("text", "unknown")
+                logger.error(f"fleet memory rejected write: {err[:120]}")
+                return False
+            return True
+        except Exception as e:
+            if attempt < 2:
+                sleep_secs = 8 * (attempt + 1)
+                logger.info(f"  fleet memory write failed (attempt {attempt+1}/3): {type(e).__name__}: {e} — retry in {sleep_secs}s")
+                time.sleep(sleep_secs)
+            else:
+                logger.error(f"fleet memory write gave up after 3 attempts: {type(e).__name__}: {e}")
+                return False
+    return False
+
+
 def _extract_and_write(
-    text: str, system_prompt: str, model: str, dry_run: bool,
+    text: str, system_prompt: str | None, model: str, dry_run: bool,
     label: str
 ) -> int:
     """Chunk text, extract facts via LLM, write to fleet memory. Returns facts written."""
     chunks = chunk_text(text)
     facts_written = 0
     total_chunks = len(chunks)
-    for batch_start in range(0, total_chunks, BATCH_SIZE):
-        batch = chunks[batch_start:batch_start + BATCH_SIZE]
-        batch_end = min(batch_start + BATCH_SIZE, total_chunks)
-        log(f"  [{label}] chunks {batch_start+1}-{batch_end}/{total_chunks} ({sum(len(c) for c in batch)} chars) → llm [{model}]")
-        items = call_ollama(batch, model, system=system_prompt)
-        log(f"  [{label}] extracted {len(items)} items")
+    for i, chunk in enumerate(chunks):
+        logger.info(f"  [{label}] chunk {i+1}/{total_chunks} ({len(chunk)} chars) → llm [{model}]")
+        items = extract_facts(chunk, model, system=system_prompt)
+        logger.info(f"  [{label}] extracted {len(items)} items")
         for item in items:
             cat = item.get("category", "fact").lower()
             content = item.get("content", "").strip()
@@ -578,14 +542,14 @@ def process_forge_repo(
 
 def run_forge_pipeline(
     client, forge_label: str, skip_repos: set[str],
-    cp: dict, cp_lock: threading.Lock, args
+    cp: dict, cp_lock: threading.Lock, args, checkpoint_file: Path
 ) -> int:
     try:
         repo_list = client.list_repos()
     except Exception as e:
-        log_error(f"{forge_label}: failed to list repos: {type(e).__name__}: {e}")
+        logger.error(f"{forge_label}: failed to list repos: {type(e).__name__}: {e}")
         return 0
-    log(f"Found {len(repo_list)} {forge_label} repos")
+    logger.info(f"Found {len(repo_list)} {forge_label} repos")
 
     def _needs_update(item: tuple[str, str]) -> bool:
         owner, repo = item
@@ -599,16 +563,16 @@ def run_forge_pipeline(
     pending = [item for item, need in zip(repo_list, needs)
                if need and f"{item[0]}/{item[1]}" not in skip_repos]
     skipped_count = sum(1 for item in repo_list if f"{item[0]}/{item[1]}" in skip_repos)
-    log(f"{forge_label}: {len(repo_list) - len(pending) - skipped_count} up-to-date, "
-        f"{skipped_count} skipped, {len(pending)} pending")
+    logger.info(f"{forge_label}: {len(repo_list) - len(pending) - skipped_count} up-to-date, "
+                f"{skipped_count} skipped, {len(pending)} pending")
     if args.limit:
         pending = pending[:args.limit]
-        log(f"{forge_label}: limited to {len(pending)}")
+        logger.info(f"{forge_label}: limited to {len(pending)}")
 
     def run_one_forge(item: tuple[str, str]) -> int:
         owner, repo = item
         key = f"{client.prefix}:{owner}/{repo}"
-        log(f"processing {forge_label} {owner}/{repo}")
+        logger.info(f"processing {forge_label} {owner}/{repo}")
         with cp_lock:
             known = cp["processed"].get(key, {}).get("file_hash")
         try:
@@ -619,17 +583,17 @@ def run_forge_pipeline(
                 cp["stats"]["files"] += 1
                 if n > 0:
                     cp["stats"]["facts"] += n
-                save_checkpoint(cp)
+                save_checkpoint(cp, checkpoint_file)
             if n == -1:
-                log(f"  already up-to-date, skip")
+                logger.info("  already up-to-date, skip")
             elif n == 0:
-                log(f"  nothing extracted")
+                logger.info("  nothing extracted")
             else:
-                log(f"  wrote {n} facts")
+                logger.info(f"  wrote {n} facts")
             return max(n, 0)
         except Exception as e:
-            log_error(f"{forge_label} {owner}/{repo}: {type(e).__name__}: {e}")
-            log(traceback.format_exc(), verbose=True)
+            logger.error(f"{forge_label} {owner}/{repo}: {type(e).__name__}: {e}")
+            logger.debug(traceback.format_exc())
             return 0
 
     facts = 0
@@ -642,103 +606,6 @@ def run_forge_pipeline(
         for item in pending:
             facts += run_one_forge(item)
     return facts
-
-
-def chunk_text(text: str) -> list[str]:
-    """Split text into chunks of ~CHUNK_CHARS characters."""
-    if len(text) <= CHUNK_CHARS:
-        return [text] if text.strip() else []
-    chunks = []
-    start = 0
-    while start < len(text):
-        end = start + CHUNK_CHARS
-        if end < len(text):
-            # split at newline boundary
-            boundary = text.rfind("\n", start, end)
-            if boundary > start:
-                end = boundary
-        chunks.append(text[start:end].strip())
-        start = end
-    return [c for c in chunks if c]
-
-
-BATCH_SIZE = 1  # chunks per Ollama request (batching degrades qwen3:8b quality)
-
-
-def call_ollama(chunks: list[str], model: str, system: str | None = None) -> list[dict]:
-    """Send chunks to LLM backend, return extracted items. Pushes token telemetry."""
-    client = create_llm_client(model=model)
-    prompt = system or EXTRACTION_SYSTEM_PROMPT
-    if system == MARKDOWN_SYSTEM_PROMPT:
-        label = "document"
-    elif system == GIT_SYSTEM_PROMPT:
-        label = "git commit log"
-    elif system == GITEA_SYSTEM_PROMPT:
-        label = "Gitea issues"
-    else:
-        label = "transcript"
-    user_content = f"Extract information from this {label}:\n\n{chunks[0]}"
-    try:
-        items, response = client.extract_json(
-            system=prompt,
-            user=user_content,
-        )
-        push_tokens(model, response.input_tokens, response.output_tokens, app="transcript-miner")
-        if len(items) != len([i for i in items if isinstance(i, dict)]):
-            log(f"  salvaged objects from malformed JSON")
-        return items
-    except Exception as e:
-        log_error(f"LLM extraction failed (model={model}): {type(e).__name__}: {e}")
-        log(traceback.format_exc(), verbose=True)
-        return []
-
-
-def add_to_fleet_memory(content: str, category: str, dry_run: bool) -> bool:
-    """Write one fact to fleet memory via MCP HTTP."""
-    if dry_run:
-        log(f"  [DRY] [{category}] {content[:80]}")
-        return True
-    payload = {
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "tools/call",
-        "params": {
-            "name": "add_memory",
-            "arguments": {
-                "content": content,
-                "agent": "transcript-miner",
-                "metadata": {"category": category}
-            }
-        }
-    }
-    for attempt in range(3):
-        try:
-            with _mem_write_sem:
-                resp = httpx.post(
-                    FLEET_MEMORY_URL,
-                    json=payload,
-                    headers={
-                        "Content-Type": "application/json",
-                        "Accept": "application/json"
-                    },
-                    timeout=180
-                )
-            resp.raise_for_status()
-            body = resp.json()
-            if body.get("result", {}).get("isError"):
-                err = body["result"].get("content", [{}])[0].get("text", "unknown")
-                log_error(f"fleet memory rejected write: {err[:120]}")
-                return False
-            return True
-        except Exception as e:
-            if attempt < 2:
-                sleep_secs = 8 * (attempt + 1)
-                log(f"  fleet memory write failed (attempt {attempt+1}/3): {type(e).__name__}: {e} — retry in {sleep_secs}s")
-                time.sleep(sleep_secs)
-            else:
-                log_error(f"fleet memory write gave up after 3 attempts: {type(e).__name__}: {e}")
-                return False
-    return False
 
 
 def find_all_transcripts(since: datetime | None, skip_subagents: bool = False) -> list[tuple[Path, str]]:
@@ -805,60 +672,23 @@ def find_all_transcripts(since: datetime | None, skip_subagents: bool = False) -
 
 def process_file(path: Path, source: str, known_hash: str | None, dry_run: bool, model: str) -> tuple[int, dict | None]:
     """
-    Process one transcript file.
+    Process one transcript/doc/repo file.
     Returns (n_facts, checkpoint_entry) — entry is None if already done (hash matches).
-    n_facts == -1 means already processed; 0 means too short.
+    n_facts == -1 means already processed; 0 means too short or nothing extracted.
     """
     fhash = git_repo_hash(path) if source == "git" else file_hash(path)
     if known_hash == fhash:
         return -1, None
 
-    if source == "claude":
-        text = parse_claude_transcript(path)
-        system_prompt = None
-    elif source == "codex":
-        text = parse_codex_transcript(path)
-        system_prompt = None
-    elif source == "antigravity":
-        text = parse_antigravity_transcript(path)
-        system_prompt = None
-    elif source == "cursor":
-        text = parse_cursor_transcript(path)
-        system_prompt = None
-    elif source == "openclaw":
-        text = parse_openclaw_transcript(path)
-        system_prompt = None
-    elif source == "markdown":
-        text = parse_markdown_file(path)
-        system_prompt = MARKDOWN_SYSTEM_PROMPT
-    elif source == "git":
-        text = parse_git_log(path)
-        system_prompt = GIT_SYSTEM_PROMPT
-    else:
-        text = parse_codex_transcript(path)
-        system_prompt = None
+    if source not in PARSERS:
+        raise ValueError(f"unknown source: {source}")
+    parser_fn, system_prompt = PARSERS[source]
+    text = parser_fn(path)
 
     if len(text) < 200:
         return 0, {"file_hash": fhash, "facts_written": 0, "skipped": True}
 
-    chunks = chunk_text(text)
-    facts_written = 0
-    total_chunks = len(chunks)
-
-    for batch_start in range(0, total_chunks, BATCH_SIZE):
-        batch = chunks[batch_start:batch_start + BATCH_SIZE]
-        batch_end = min(batch_start + BATCH_SIZE, total_chunks)
-        log(f"  chunks {batch_start+1}-{batch_end}/{total_chunks} ({sum(len(c) for c in batch)} chars) → llm [{model}]")
-        items = call_ollama(batch, model, system=system_prompt)
-        log(f"  extracted {len(items)} items")
-        for item in items:
-            cat = item.get("category", "fact").lower()
-            content = item.get("content", "").strip()
-            if not content or len(content) < 10:
-                continue
-            if add_to_fleet_memory(content, cat, dry_run):
-                facts_written += 1
-            time.sleep(0.1)
+    facts_written = _extract_and_write(text, system_prompt, model, dry_run, label=source)
 
     return facts_written, {
         "file_hash": fhash,
@@ -877,7 +707,7 @@ def main():
     parser.add_argument("--skip-subagents", action="store_true", help="Skip files inside subagents/ subdirectories")
     parser.add_argument("--no-transcripts", action="store_true", help="Skip transcript processing (run only forge/git/markdown sources)")
     parser.add_argument("--workers", type=int, default=1, help="Parallel worker threads (default: 1)")
-    parser.add_argument("--model", default=DEFAULT_MODEL, help="LLM model for extraction (inferred from env if not set: OpenAI→gpt-4o-mini, Anthropic→claude-haiku, Ollama→qwen3:8b)")
+    parser.add_argument("--model", default=None, help="LLM model for extraction (inferred from env if not set: OpenAI→gpt-4o-mini, Anthropic→claude-haiku, Ollama→qwen3:8b)")
     parser.add_argument("--checkpoint", help="Custom checkpoint file path (default: checkpoint.json)")
     parser.add_argument("--markdown", action="store_true", help="Also mine markdown docs from project repos")
     parser.add_argument("--markdown-roots", nargs="+", type=Path, default=MARKDOWN_ROOTS_DEFAULT,
@@ -902,8 +732,18 @@ def main():
                         help="Repos to skip, format owner/repo — applies to all forges")
     args = parser.parse_args()
 
-    global VERBOSE
-    VERBOSE = args.verbose
+    if not args.model:
+        args.model = _infer_default_model()
+
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="[%(asctime)s] %(message)s",
+        datefmt="%H:%M:%S",
+        handlers=[
+            logging.FileHandler(LOG_FILE, encoding="utf-8"),
+            logging.StreamHandler(sys.stdout),
+        ],
+    )
 
     if not args.model:
         print("ERROR: no LLM model configured. Set LLM_MODEL in .env or pass --model.", file=sys.stderr)
@@ -912,15 +752,13 @@ def main():
         print("  Ollama:    OLLAMA_URL=http://localhost:11434  LLM_MODEL=qwen3:8b", file=sys.stderr)
         sys.exit(1)
 
-    if args.checkpoint:
-        global CHECKPOINT_FILE
-        CHECKPOINT_FILE = Path(args.checkpoint)
+    checkpoint_file = Path(args.checkpoint) if args.checkpoint else Path(__file__).parent / "checkpoint.json"
 
     since = None
     if args.since:
         since = datetime.strptime(args.since, "%Y-%m-%d").replace(tzinfo=timezone.utc)
 
-    cp = load_checkpoint()
+    cp = load_checkpoint(checkpoint_file)
     cp_lock = threading.Lock()
 
     all_files = [] if args.no_transcripts else find_all_transcripts(since, skip_subagents=args.skip_subagents)
@@ -934,7 +772,7 @@ def main():
                 sys.exit(1)
             args.markdown_roots = [Path(projects)]
         md_files = find_markdown_files(args.markdown_roots)
-        log(f"Found {len(md_files)} markdown files across {len(args.markdown_roots)} roots")
+        logger.info(f"Found {len(md_files)} markdown files across {len(args.markdown_roots)} roots")
     if args.git:
         if not args.git_roots:
             projects = os.getenv("PROJECTS_ROOT")
@@ -943,7 +781,7 @@ def main():
                 sys.exit(1)
             args.git_roots = [Path(projects)]
         git_repos = find_git_repos(args.git_roots)
-        log(f"Found {len(git_repos)} git repos across {len(args.git_roots)} roots")
+        logger.info(f"Found {len(git_repos)} git repos across {len(args.git_roots)} roots")
     all_files = all_files + md_files + git_repos
 
     def _get_hash(path: Path, source: str) -> str:
@@ -963,12 +801,14 @@ def main():
         parts.append(f"{len(md_files)} markdown")
     if git_repos:
         parts.append(f"{len(git_repos)} git repos")
-    log(f"Found {len(all_files)} files ({', '.join(parts)}): {already_done} done, {len(pending)} pending"
-        + (f" [skipped subagents]" if args.skip_subagents else ""))
+    logger.info(
+        f"Found {len(all_files)} files ({', '.join(parts)}): {already_done} done, {len(pending)} pending"
+        + (" [skipped subagents]" if args.skip_subagents else "")
+    )
     if args.limit:
         pending = pending[:args.limit]
-        log(f"Limited to {len(pending)} files")
-    log(f"Model: {args.model}  Workers: {args.workers}")
+        logger.info(f"Limited to {len(pending)} files")
+    logger.info(f"Model: {args.model}  Workers: {args.workers}")
 
     total_facts = 0
 
@@ -978,7 +818,7 @@ def main():
         rel = str(path).replace(str(Path.home()), "~")
         with cp_lock:
             known_hash = cp["processed"].get(key, {}).get("file_hash")
-        log(f"processing {source} {rel}")
+        logger.info(f"processing {source} {rel}")
         try:
             n, entry = process_file(path, source, known_hash, args.dry_run, args.model)
             with cp_lock:
@@ -987,20 +827,20 @@ def main():
                 cp["stats"]["files"] += 1
                 if n > 0:
                     cp["stats"]["facts"] += n
-                save_checkpoint(cp)
+                save_checkpoint(cp, checkpoint_file)
             if n == -1:
-                log(f"  already processed, skip")
+                logger.info("  already processed, skip")
             elif n == 0:
-                log(f"  too short, skip")
+                logger.info("  too short, skip")
             else:
-                log(f"  wrote {n} facts")
+                logger.info(f"  wrote {n} facts")
             return max(n, 0)
         except Exception as e:
-            log_error(f"{source} {rel}: {type(e).__name__}: {e}")
-            log(traceback.format_exc(), verbose=True)
+            logger.error(f"{source} {rel}: {type(e).__name__}: {e}")
+            logger.debug(traceback.format_exc())
             with cp_lock:
                 cp["stats"]["errors"] += 1
-                save_checkpoint(cp)
+                save_checkpoint(cp, checkpoint_file)
             return 0
 
     if args.workers > 1:
@@ -1017,7 +857,7 @@ def main():
     if args.github:
         gh_token = os.getenv("GITHUB_TOKEN", "")
         if not gh_token:
-            log("GitHub: GITHUB_TOKEN not set — skipping")
+            logger.info("GitHub: GITHUB_TOKEN not set — skipping")
         else:
             try:
                 r = httpx.get(
@@ -1027,16 +867,16 @@ def main():
                 )
                 r.raise_for_status()
                 username = r.json().get("login", "?")
-                log(f"GitHub: authenticated as {username}")
+                logger.info(f"GitHub: authenticated as {username}")
                 gh_client = GitHubForgeClient(token=gh_token, base_url=args.github_url, orgs=args.github_orgs)
-                total_facts += run_forge_pipeline(gh_client, "github", skip_set, cp, cp_lock, args)
+                total_facts += run_forge_pipeline(gh_client, "github", skip_set, cp, cp_lock, args, checkpoint_file)
             except Exception as e:
-                log_error(f"GitHub: token validation failed — {type(e).__name__}: {e} — skipping")
+                logger.error(f"GitHub: token validation failed — {type(e).__name__}: {e} — skipping")
 
     if args.gitlab:
         gl_token = os.getenv("GITLAB_TOKEN", "")
         if not gl_token:
-            log("GitLab: GITLAB_TOKEN not set — skipping")
+            logger.info("GitLab: GITLAB_TOKEN not set — skipping")
         else:
             api_base = args.gitlab_url.rstrip("/")
             try:
@@ -1047,11 +887,11 @@ def main():
                 )
                 r.raise_for_status()
                 username = r.json().get("username", "?")
-                log(f"GitLab: authenticated as {username}")
+                logger.info(f"GitLab: authenticated as {username}")
                 gl_client = GitLabForgeClient(token=gl_token, base_url=args.gitlab_url, groups=args.gitlab_groups)
-                total_facts += run_forge_pipeline(gl_client, "gitlab", skip_set, cp, cp_lock, args)
+                total_facts += run_forge_pipeline(gl_client, "gitlab", skip_set, cp, cp_lock, args, checkpoint_file)
             except Exception as e:
-                log_error(f"GitLab: token validation failed — {type(e).__name__}: {e} — skipping")
+                logger.error(f"GitLab: token validation failed — {type(e).__name__}: {e} — skipping")
 
     if args.gitea:
         gitea_token = os.getenv("GITEA_TOKEN", "")
@@ -1060,14 +900,14 @@ def main():
         else:
             cred_user, cred_pw = get_gitea_credentials(GITEA_URL)
             if not cred_user:
-                log("Gitea: no GITEA_TOKEN and no git credential store credentials — skipping")
+                logger.info("Gitea: no GITEA_TOKEN and no git credential store credentials — skipping")
                 gitea_client = None
             else:
                 gitea_client = GiteaForgeClient(base_url=GITEA_URL, orgs=args.gitea_orgs, user=cred_user, password=cred_pw)
         if gitea_client:
-            total_facts += run_forge_pipeline(gitea_client, "gitea", skip_set, cp, cp_lock, args)
+            total_facts += run_forge_pipeline(gitea_client, "gitea", skip_set, cp, cp_lock, args, checkpoint_file)
 
-    log(f"Done. {total_facts} new facts written. Total in checkpoint: {cp['stats']['facts']}")
+    logger.info(f"Done. {total_facts} new facts written. Total in checkpoint: {cp['stats']['facts']}")
 
 
 if __name__ == "__main__":

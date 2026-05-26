@@ -78,9 +78,21 @@ Claude Code — add to MCP settings:
 ```
 Omit `headers` if `MCP_AUTH_TOKEN` is not set.
 
-Add `onboarding/claude-md-snippet.md` content to your `CLAUDE.md`.
+### 3. Wire agent behavior
 
-### 3. Backfill
+**This step is required.** Wiring the MCP server gives agents the tools — but without explicit
+instructions, agents have no directive to search or write memory and will ignore it.
+
+Paste the contents of `onboarding/agent-instructions.md` into your agent's instruction file:
+
+| Agent | File |
+|-------|------|
+| Claude Code | `CLAUDE.md` at project root or `~/.claude/CLAUDE.md` (global) |
+| Codex | `AGENTS.md` at project root |
+| Cursor | `.cursor/rules` in project root |
+| Other tools | wherever the tool accepts a persistent system prompt |
+
+### 4. Backfill
 
 ```bash
 cd miner/
