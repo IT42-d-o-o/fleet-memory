@@ -1,10 +1,5 @@
-__pycache__/
-*.pyc
-*.pyo
 .env
-checkpoint.json
-checkpoint_*.json
-*.log
-*.err
-venv/
-.venv/
+docker-compose.override.yml
+miner/checkpoint.json
+miner/miner.log
+miner/.env
