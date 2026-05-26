@@ -44,9 +44,6 @@ from _llm import create_llm_client, push_tokens
 from _forge import GitHubForgeClient, GitLabForgeClient, GiteaForgeClient, get_gitea_credentials, GIT_SKIP_SUBJECTS
 from prompts import EXTRACTION_SYSTEM_PROMPT, MARKDOWN_SYSTEM_PROMPT, GIT_SYSTEM_PROMPT, GITEA_SYSTEM_PROMPT
 
-# Force UTF-8 line-buffered stdout on Windows (fixes PowerShell console lag)
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
-
 CLAUDE_SESSIONS_ROOT = Path.home() / ".claude" / "projects"
 CODEX_SESSIONS_ROOT = Path.home() / ".codex" / "sessions"
 ANTIGRAVITY_BRAIN_ROOT = Path.home() / ".gemini" / "antigravity" / "brain"
@@ -699,6 +696,9 @@ def process_file(path: Path, source: str, known_hash: str | None, dry_run: bool,
 
 
 def main():
+    # Force UTF-8 line-buffered stdout on Windows (fixes PowerShell console lag)
+    if hasattr(sys.stdout, "buffer"):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
     parser = argparse.ArgumentParser(description="Mine session transcripts into fleet memory")
     parser.add_argument("--dry-run", action="store_true", help="Extract but don't write to fleet memory")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose debug logging (exception tracebacks, retry details)")

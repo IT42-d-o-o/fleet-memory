@@ -3,6 +3,8 @@ on: [push, pull_request, workflow_dispatch]
 jobs:
   lint:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -11,8 +13,22 @@ jobs:
       - run: pip install pyflakes
       - run: python -m pyflakes miner/miner.py miner/_llm.py miner/_forge.py server/server.py
 
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r miner/requirements.txt pytest
+      - run: python -m pytest tests/test_miner.py -v
+
   miner-dry-run:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
