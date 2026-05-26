@@ -1,0 +1,27 @@
+on: [push, pull_request]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install pyflakes
+      - run: python -m pyflakes miner/miner.py miner/_llm.py miner/_forge.py server/server.py
+
+  miner-dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r miner/requirements.txt
+      - run: python miner/miner.py --dry-run --limit 1
+        env:
+          FLEET_MEMORY_URL: "http://127.0.0.1:8800/mcp"
+          LLM_BASE_URL: "https://api.openai.com/v1"
+          LLM_API_KEY: "sk-dummy"
+          LLM_MODEL: "gpt-4o-mini"
