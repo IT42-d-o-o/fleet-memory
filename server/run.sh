@@ -12,7 +12,7 @@ if [ "${LLM_PROVIDER:-openai}" = "openai" ] && [ -z "$OPENAI_API_KEY" ]; then
         export VAULT_ADDR=${VAULT_ADDR:?ERROR: VAULT_ADDR must be set when using vault-token}
         VAULT_TOKEN=$(cat /etc/memory-mcp/vault-token)
         export VAULT_TOKEN
-        OPENAI_API_KEY=$(vault kv get -field=openai_api secret/Mem0)
+        OPENAI_API_KEY=$(vault kv get -field=api_key secret/memory-mcp/openai)
         export OPENAI_API_KEY
         unset VAULT_TOKEN
     else
