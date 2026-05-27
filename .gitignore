@@ -4,3 +4,7 @@ miner/checkpoint.json
 miner/miner.log
 miner/.env*
 server/reclassify.py
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
