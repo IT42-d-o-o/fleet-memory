@@ -18,7 +18,8 @@ The latest commit on `main` is the supported version. No versioned releases yet.
 
 **Do not open a public GitHub issue for security vulnerabilities.**
 
-Email: `security@it42.hr`
+Open a private GitHub security advisory at:
+`https://github.com/IT42-d-o-o/fleet-memory/security/advisories/new`
 
 Include:
 - Description of the vulnerability
