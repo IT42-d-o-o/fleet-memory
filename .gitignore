@@ -3,3 +3,4 @@ docker-compose.override.yml
 miner/checkpoint.json
 miner/miner.log
 miner/.env*
+server/reclassify.py

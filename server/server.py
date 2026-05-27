@@ -197,29 +197,45 @@ def _emit_metric(text_len: int) -> None:
 
 # --- MCP tools -----------------------------------------------------------
 @mcp.tool()
-def add_memory(content: str, agent: str, metadata: dict[str, Any] | None = None) -> str:
+def add_memory(content: str, agent: str, project: str | None = None, metadata: dict[str, Any] | None = None) -> str:
     """Store a memory in the shared fleet memory.
 
     content:  the fact / decision / lesson to remember.
     agent:    name of the writing agent (e.g. 'claude', 'miner', 'overseer-bot').
+    project:  optional project slug (e.g. 'atila', 'lexradar'). Stored under fleet:{project}.
     metadata: optional extra tags — merged with source provenance.
     """
     meta = dict(metadata or {})
     meta["source"] = agent
-    result = memory.add(content, user_id=FLEET_NS, metadata=meta, infer=True)
+    namespace = f"{FLEET_NS}:{project}" if project else FLEET_NS
+    result = memory.add(content, user_id=namespace, metadata=meta, infer=True)
     _emit_metric(len(content))
-    log.info("add_memory by %s -> %s", agent, result)
+    log.info("add_memory by %s ns=%s -> %s", agent, namespace, result)
     return json.dumps(result, default=str)
 
 
 @mcp.tool()
-def search_memory(query: str, limit: int = 5) -> str:
+def search_memory(query: str, limit: int = 5, project: str | None = None) -> str:
     """Search the shared fleet memory.
 
-    query: natural-language query.
-    limit: max results (default 5).
+    query:   natural-language query.
+    limit:   max results (default 5).
+    project: if set, searches fleet:{project} and global fleet merged by score.
     """
-    result = memory.search(query, filters={"user_id": FLEET_NS}, limit=limit)
+    if project:
+        ns = f"{FLEET_NS}:{project}"
+        r1 = memory.search(query, filters={"user_id": ns}, limit=limit)
+        r2 = memory.search(query, filters={"user_id": FLEET_NS}, limit=limit)
+        seen: set = set()
+        merged: list = []
+        for r in (r1.get("results", []) + r2.get("results", [])):
+            if r["id"] not in seen:
+                seen.add(r["id"])
+                merged.append(r)
+        merged.sort(key=lambda x: x.get("score", 0), reverse=True)
+        result: Any = {"results": merged[:limit]}
+    else:
+        result = memory.search(query, filters={"user_id": FLEET_NS}, limit=limit)
     _emit_metric(len(query))
     return json.dumps(result, default=str)
 
