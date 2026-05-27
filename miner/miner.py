@@ -54,6 +54,86 @@ LOG_FILE = Path(__file__).parent / "miner.log"
 FLEET_MEMORY_URL = os.getenv("FLEET_MEMORY_URL", "http://127.0.0.1:8800/mcp")
 
 
+def _slugify(name: str) -> str | None:
+    if not name:
+        return None
+    s = re.sub(r"[^a-z0-9_-]", "-", name.lower()).strip("-")
+    return s or None
+
+
+def _git_remote_slug(repo_root: Path) -> str | None:
+    try:
+        r = subprocess.run(
+            ["git", "remote", "get-url", "origin"],
+            cwd=repo_root, capture_output=True, text=True, timeout=5, check=False
+        )
+        if r.returncode == 0 and r.stdout.strip():
+            url = r.stdout.strip().rstrip("/")
+            slug = url.rsplit("/", 1)[-1]
+            if slug.endswith(".git"):
+                slug = slug[:-4]
+            return _slugify(slug)
+    except Exception:
+        pass
+    return None
+
+
+def _find_git_root(path: Path) -> Path | None:
+    candidate = path if path.is_dir() else path.parent
+    while candidate != candidate.parent:
+        if (candidate / ".git").exists():
+            return candidate
+        candidate = candidate.parent
+    return None
+
+
+def detect_project(path: Path, source: str) -> str | None:
+    """Infer project namespace slug from path + source type. Returns None for global/cross-project facts."""
+    if source == "git":
+        cfg = path / ".fleet-memory.json"
+        if cfg.exists():
+            try:
+                if p := json.loads(cfg.read_text()).get("project"):
+                    return _slugify(p)
+            except Exception:
+                pass
+        return _git_remote_slug(path) or _slugify(path.name)
+
+    if source == "markdown":
+        repo_root = _find_git_root(path)
+        if repo_root:
+            cfg = repo_root / ".fleet-memory.json"
+            if cfg.exists():
+                try:
+                    if p := json.loads(cfg.read_text()).get("project"):
+                        return _slugify(p)
+                except Exception:
+                    pass
+            return _git_remote_slug(repo_root) or _slugify(repo_root.name)
+        return _slugify(path.parent.name)
+
+    if source == "claude":
+        # ~/.claude/projects/{encoded-workdir}/... — encoded-workdir uses -- as separator
+        parts = path.parts
+        for i, part in enumerate(parts):
+            if part == ".claude" and i + 1 < len(parts) and parts[i + 1] == "projects" and i + 2 < len(parts):
+                segments = [s for s in parts[i + 2].split("--") if s and not s.isdigit()]
+                if segments:
+                    return _slugify(segments[-1])
+        return None
+
+    if source == "cursor":
+        # ~/.cursor/projects/{workspace}/agent-transcripts/...
+        parts = path.parts
+        for i, part in enumerate(parts):
+            if part == ".cursor" and i + 1 < len(parts) and parts[i + 1] == "projects" and i + 2 < len(parts):
+                return _slugify(parts[i + 2])
+        return None
+
+    # codex, antigravity, openclaw — no reliable project signal from path alone
+    return None
+
+
 def _infer_default_model() -> str | None:
     if m := os.getenv("LLM_MODEL"):
         return m
@@ -437,22 +517,26 @@ def extract_facts(chunk: str, model: str, system: str | None = None) -> list[dic
         return []
 
 
-def add_to_fleet_memory(content: str, category: str, dry_run: bool) -> bool:
+def add_to_fleet_memory(content: str, category: str, dry_run: bool, project: str | None = None) -> bool:
     """Write one fact to fleet memory via MCP HTTP."""
     if dry_run:
-        logger.info(f"  [DRY] [{category}] {content[:80]}")
+        proj_tag = f"[{project}] " if project else ""
+        logger.info(f"  [DRY] [{category}] {proj_tag}{content[:80]}")
         return True
+    arguments: dict = {
+        "content": content,
+        "agent": "transcript-miner",
+        "metadata": {"category": category}
+    }
+    if project:
+        arguments["project"] = project
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
         "method": "tools/call",
         "params": {
             "name": "add_memory",
-            "arguments": {
-                "content": content,
-                "agent": "transcript-miner",
-                "metadata": {"category": category}
-            }
+            "arguments": arguments,
         }
     }
     for attempt in range(3):
@@ -487,7 +571,7 @@ def add_to_fleet_memory(content: str, category: str, dry_run: bool) -> bool:
 
 def _extract_and_write(
     text: str, system_prompt: str | None, model: str, dry_run: bool,
-    label: str
+    label: str, project: str | None = None
 ) -> int:
     """Chunk text, extract facts via LLM, write to fleet memory. Returns facts written."""
     chunks = chunk_text(text)
@@ -502,7 +586,7 @@ def _extract_and_write(
             content = item.get("content", "").strip()
             if not content or len(content) < 10:
                 continue
-            if add_to_fleet_memory(content, cat, dry_run):
+            if add_to_fleet_memory(content, cat, dry_run, project=project):
                 facts_written += 1
             time.sleep(0.1)
     return facts_written
@@ -518,13 +602,14 @@ def process_forge_repo(
 
     facts_written = 0
 
+    project = _slugify(repo)
     issues_text = client.fetch_issues(owner, repo)
     if len(issues_text) >= 200:
-        facts_written += _extract_and_write(issues_text, GITEA_SYSTEM_PROMPT, model, dry_run, "issues")
+        facts_written += _extract_and_write(issues_text, GITEA_SYSTEM_PROMPT, model, dry_run, "issues", project=project)
 
     commits_text = client.fetch_commits(owner, repo)
     if len(commits_text) >= 200:
-        facts_written += _extract_and_write(commits_text, GIT_SYSTEM_PROMPT, model, dry_run, "commits")
+        facts_written += _extract_and_write(commits_text, GIT_SYSTEM_PROMPT, model, dry_run, "commits", project=project)
 
     if facts_written == 0:
         return 0, {"file_hash": fhash, "facts_written": 0, "skipped": True}
@@ -685,7 +770,8 @@ def process_file(path: Path, source: str, known_hash: str | None, dry_run: bool,
     if len(text) < 200:
         return 0, {"file_hash": fhash, "facts_written": 0, "skipped": True}
 
-    facts_written = _extract_and_write(text, system_prompt, model, dry_run, label=source)
+    project = detect_project(path, source)
+    facts_written = _extract_and_write(text, system_prompt, model, dry_run, label=source, project=project)
 
     return facts_written, {
         "file_hash": fhash,
