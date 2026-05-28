@@ -490,6 +490,10 @@ def chunk_text(text: str) -> list[str]:
     return [c for c in chunks if c]
 
 
+class LLMRateLimitError(Exception):
+    pass
+
+
 def extract_facts(chunk: str, model: str, system: str | None = None) -> list[dict]:
     """Send one text chunk to LLM backend, return extracted fact objects. Pushes token telemetry."""
     client = create_llm_client(model=model)
@@ -502,19 +506,33 @@ def extract_facts(chunk: str, model: str, system: str | None = None) -> list[dic
         label = "Gitea issues"
     else:
         label = "transcript"
-    try:
-        items, response = client.extract_json(
-            system=prompt,
-            user=f"Extract information from this {label}:\n\n{chunk}",
-        )
-        push_tokens(model, response.input_tokens, response.output_tokens, app="transcript-miner")
-        if len(items) != len([i for i in items if isinstance(i, dict)]):
-            logger.info("  salvaged objects from malformed JSON")
-        return items
-    except Exception as e:
-        logger.error(f"LLM extraction failed (model={model}): {type(e).__name__}: {e}")
-        logger.debug(traceback.format_exc())
-        return []
+    for attempt in range(3):
+        try:
+            items, response = client.extract_json(
+                system=prompt,
+                user=f"Extract information from this {label}:\n\n{chunk}",
+            )
+            push_tokens(model, response.input_tokens, response.output_tokens, app="transcript-miner")
+            if len(items) != len([i for i in items if isinstance(i, dict)]):
+                logger.info("  salvaged objects from malformed JSON")
+            return items
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 429:
+                if attempt < 2:
+                    wait = 5 * (2 ** attempt)  # 5s, 10s
+                    logger.warning(f"  rate limited (attempt {attempt + 1}/3) — retry in {wait}s")
+                    time.sleep(wait)
+                    continue
+                logger.error("LLM rate limit: giving up after 3 attempts")
+                raise LLMRateLimitError("LLM rate limit exceeded after 3 attempts") from e
+            logger.error(f"LLM extraction failed (model={model}): {type(e).__name__}: {e}")
+            logger.debug(traceback.format_exc())
+            return []
+        except Exception as e:
+            logger.error(f"LLM extraction failed (model={model}): {type(e).__name__}: {e}")
+            logger.debug(traceback.format_exc())
+            return []
+    return []
 
 
 def add_to_fleet_memory(content: str, category: str, dry_run: bool, project: str | None = None) -> bool:
@@ -771,7 +789,11 @@ def process_file(path: Path, source: str, known_hash: str | None, dry_run: bool,
         return 0, {"file_hash": fhash, "facts_written": 0, "skipped": True}
 
     project = detect_project(path, source)
-    facts_written = _extract_and_write(text, system_prompt, model, dry_run, label=source, project=project)
+    try:
+        facts_written = _extract_and_write(text, system_prompt, model, dry_run, label=source, project=project)
+    except LLMRateLimitError:
+        logger.warning(f"  rate limited — {path.name} not checkpointed, will retry next run")
+        return 0, None
 
     return facts_written, {
         "file_hash": fhash,

@@ -13,11 +13,16 @@ import pytest
 # miner/ is not a package — add it to path so imports resolve
 sys.path.insert(0, str(Path(__file__).parent.parent / "miner"))
 
+import httpx
+
 from miner import (  # noqa: E402
+    LLMRateLimitError,
     PARSERS,
     add_to_fleet_memory,
     chunk_text,
+    extract_facts,
     parse_claude_transcript,
+    process_file,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -104,9 +109,80 @@ class TestAddToFleetMemory:
         assert payload["params"]["arguments"]["metadata"]["category"] == "lesson"
 
     def test_http_error_returns_false(self):
-        import httpx as _httpx
-
-        with patch("miner.httpx.post", side_effect=_httpx.ConnectError("refused")):
+        with patch("miner.httpx.post", side_effect=httpx.ConnectError("refused")):
             result = add_to_fleet_memory("fact", "project", dry_run=False)
 
         assert result is False
+
+
+def _make_429_response():
+    mock_resp = MagicMock()
+    mock_resp.status_code = 429
+    mock_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "429 Too Many Requests", request=MagicMock(), response=mock_resp
+    )
+    return mock_resp
+
+
+def _make_200_response(facts_json='[{"category": "lesson", "content": "SQLite WAL mode prevents deadlocks"}]'):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.raise_for_status.return_value = None
+    mock_resp.json.return_value = {
+        "choices": [{"message": {"content": facts_json}}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+    }
+    return mock_resp
+
+
+class TestExtractFactsRetry:
+    def test_succeeds_after_two_429s(self):
+        responses = [_make_429_response(), _make_429_response(), _make_200_response()]
+        with patch("_llm.httpx.post", side_effect=responses), patch("miner.time.sleep"):
+            result = extract_facts("SQLite WAL mode prevents deadlocks under load", "gpt-4o-mini")
+        assert len(result) == 1
+        assert result[0]["category"] == "lesson"
+
+    def test_raises_llm_rate_limit_error_after_three_429s(self):
+        responses = [_make_429_response(), _make_429_response(), _make_429_response()]
+        with patch("_llm.httpx.post", side_effect=responses), patch("miner.time.sleep"):
+            with pytest.raises(LLMRateLimitError):
+                extract_facts("some text", "gpt-4o-mini")
+
+    def test_non_429_http_error_returns_empty_no_raise(self):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 500
+        mock_resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "500", request=MagicMock(), response=mock_resp
+        )
+        with patch("_llm.httpx.post", return_value=mock_resp):
+            result = extract_facts("some text", "gpt-4o-mini")
+        assert result == []
+
+
+class TestCheckpointOnRateLimit:
+    def test_rate_limited_file_not_checkpointed(self, tmp_path):
+        transcript = tmp_path / "test.jsonl"
+        transcript.write_text(
+            ('{"type":"user","message":{"role":"user","content":"Deploy auth service to prod."}}\n' * 60),
+            encoding="utf-8",
+        )
+        responses = [_make_429_response(), _make_429_response(), _make_429_response()]
+        with patch("_llm.httpx.post", side_effect=responses), patch("miner.time.sleep"):
+            n_facts, checkpoint_entry = process_file(transcript, "claude", None, True, "gpt-4o-mini")
+
+        assert checkpoint_entry is None
+        assert n_facts == 0
+
+    def test_successful_file_is_checkpointed(self, tmp_path):
+        transcript = tmp_path / "test.jsonl"
+        transcript.write_text(
+            ('{"type":"user","message":{"role":"user","content":"Deploy auth service to prod."}}\n' * 60),
+            encoding="utf-8",
+        )
+        with patch("_llm.httpx.post", return_value=_make_200_response()), \
+             patch("miner.add_to_fleet_memory", return_value=True):
+            n_facts, checkpoint_entry = process_file(transcript, "claude", None, True, "gpt-4o-mini")
+
+        assert checkpoint_entry is not None
+        assert "file_hash" in checkpoint_entry
