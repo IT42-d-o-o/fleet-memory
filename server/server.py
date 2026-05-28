@@ -197,20 +197,23 @@ def _emit_metric(text_len: int) -> None:
 
 # --- MCP tools -----------------------------------------------------------
 @mcp.tool()
-def add_memory(content: str, agent: str, project: str | None = None, metadata: dict[str, Any] | None = None) -> str:
+def add_memory(content: str, agent: str, project: str | None = None, metadata: dict[str, Any] | None = None, infer: bool = False) -> str:
     """Store a memory in the shared fleet memory.
 
     content:  the fact / decision / lesson to remember.
     agent:    name of the writing agent (e.g. 'claude', 'miner', 'overseer-bot').
     project:  optional project slug (e.g. 'atila', 'lexradar'). Stored under fleet:{project}.
     metadata: optional extra tags — merged with source provenance.
+    infer:    False (default) stores content verbatim as one atomic fact — use when the
+              caller already extracted a single fact. True re-runs mem0 LLM extraction to
+              split/dedup — use only for raw multi-fact conversation snippets.
     """
     meta = dict(metadata or {})
     meta["source"] = agent
     namespace = f"{FLEET_NS}:{project}" if project else FLEET_NS
-    result = memory.add(content, user_id=namespace, metadata=meta, infer=True)
+    result = memory.add(content, user_id=namespace, metadata=meta, infer=infer)
     _emit_metric(len(content))
-    log.info("add_memory by %s ns=%s -> %s", agent, namespace, result)
+    log.info("add_memory by %s ns=%s infer=%s -> %s", agent, namespace, infer, result)
     return json.dumps(result, default=str)
 
 
@@ -222,6 +225,8 @@ def search_memory(query: str, limit: int = 5, project: str | None = None) -> str
     limit:   max results (default 5).
     project: if set, searches fleet:{project} and global fleet merged by score.
     """
+    if not query or not query.strip():
+        return json.dumps({"results": []})
     if project:
         ns = f"{FLEET_NS}:{project}"
         r1 = memory.search(query, filters={"user_id": ns}, limit=limit)
