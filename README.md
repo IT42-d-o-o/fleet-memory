@@ -46,7 +46,8 @@ docs/           LLM backend guide, backfill docs
 
 ```bash
 cp .env.example .env
-# Edit .env — set OPENAI_API_KEY or switch to Ollama
+# Runs keyless by default (LLM_PROVIDER=none) — no API key, fully local.
+# To enable LLM fact-extraction + dedup, set a provider in .env (see Write modes).
 docker compose up -d
 ```
 
@@ -121,8 +122,25 @@ GitHub Enterprise and GitLab self-hosted are supported via `--github-url` / `--g
 
 | Tool | Purpose |
 |------|---------|
-| `add_memory(content, agent, metadata)` | Store a fact/lesson/decision |
-| `search_memory(query, limit)` | Semantic search across all agents |
+| `add_memory(content, agent, project, metadata, infer)` | Store a fact/lesson/decision (see [Write modes](#write-modes)) |
+| `search_memory(query, limit, project)` | Semantic search across all agents |
+
+## Write modes
+
+`add_memory` takes an `infer` flag that controls how mem0 processes the content:
+
+| `infer` | Behavior | LLM calls per write | Use when |
+|---------|----------|---------------------|----------|
+| `false` *(default)* | Stores `content` verbatim as one memory | **0** | Caller already extracted a single atomic fact — most agent writes, and the miner |
+| `true` | mem0 runs LLM fact-extraction + ADD/UPDATE/DELETE dedup against existing memory | **2** | Passing a raw multi-fact conversation snippet you want mem0 to split and dedup |
+
+**The default is `infer=false`** — agents are expected to write single, already-phrased facts. This keeps writes free (no LLM call), fast, and verbatim (no re-extraction mangling).
+
+Trade-off: `infer=false` skips mem0's dedup-on-write, so near-duplicate facts can accumulate if agents restate the same thing — run a periodic dedup pass if that matters.
+
+### Keyless mode
+
+Set **`LLM_PROVIDER=none`** (the default in `.env.example`) for fully keyless, fully local operation: `fastembed` runs embeddings on-device, `infer` is forced off, and **no API key is required to boot or run**. `add_memory` stores verbatim and `search_memory` ranks by semantic similarity — both make **zero external API calls**. To enable LLM-backed fact extraction and dedup, set a provider (`openai`, `litellm`, `anthropic`, `ollama`) and pass `infer=true` on writes.
 
 ## LLM backends
 
@@ -130,7 +148,7 @@ See `docs/llm-backends.md`. Short version: OpenAI gives best quality; Ollama is 
 
 ## Cost and privacy
 
-**LLM calls:** every `add_memory` call makes **2 LLM API calls** — one to extract the fact, one to classify it as ADD/UPDATE/DELETE against existing memory. Running the miner on large transcript archives (thousands of files) will generate meaningful API spend. Estimate before running at scale; use `--dry-run` first.
+**LLM calls:** with the default `infer=false`, `add_memory` makes **no** LLM calls — it embeds the content and stores it verbatim. With `infer=true` it makes **2 LLM API calls** per write (extract the fact, then classify it ADD/UPDATE/DELETE against existing memory). The **miner** always runs its own extraction LLM regardless of `infer`. Running the miner on large transcript archives (thousands of files) will generate meaningful API spend. Estimate before running at scale; use `--dry-run` first.
 
 **Data leaves the machine:** the miner sends raw transcript text to your configured LLM to extract facts. If you use OpenAI or any cloud LLM, that content transits their API. To keep all data local, use Ollama (`LLM_PROVIDER=ollama`) — no data leaves your host.
 
@@ -173,7 +191,7 @@ See `NOTICE` for full attribution.
 ## What this is NOT
 
 - **Not a RAG system** — no document chunking or PDF ingestion. It stores extracted facts, not raw documents.
-- **Not a long-term knowledge base** — mem0 deduplicates and overwrites stale facts; it's a live memory, not an archive.
+- **Not a long-term knowledge base** — with `infer=true`, mem0 deduplicates and overwrites stale facts; it's a live memory, not an archive. The default `infer=false` stores verbatim and does *not* dedup on write — run a periodic dedup pass if you write many similar facts.
 - **Not multi-tenant** — single namespace (`fleet`) shared by all agents. Namespace isolation (`MEM0_NAMESPACE`) is available but there is no auth-per-namespace.
 - **Not a replacement for structured storage** — don't store logs, metrics, or relational data here. Store observations and decisions.
 - **Not production-hardened for public internet** — set `MCP_AUTH_TOKEN` and put it behind a reverse proxy with TLS before exposing externally.

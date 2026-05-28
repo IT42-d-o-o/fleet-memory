@@ -30,8 +30,15 @@ logging.basicConfig(
 )
 log = logging.getLogger("memory-mcp")
 
+# mem0 v3 hybrid search optionally uses spaCy (mem0ai[nlp]) for BM25/entity ranking.
+# We run semantic-only, so silence its "spaCy not installed" warning emitted on every call.
+logging.getLogger("mem0.utils.spacy_models").setLevel(logging.ERROR)
+
 # --- configuration -------------------------------------------------------
 LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "openai").lower()
+# Keyless mode: fastembed embeddings, no LLM. add_memory always stores verbatim
+# (infer is forced False) so the LLM is never called and no API key is required.
+KEYLESS = LLM_PROVIDER == "none"
 
 QDRANT_HOST = os.environ.get("QDRANT_HOST", "127.0.0.1")
 QDRANT_PORT = int(os.environ.get("QDRANT_PORT", "6333"))
@@ -78,7 +85,20 @@ def _fastembed_embedder(model: str = "BAAI/bge-small-en-v1.5") -> tuple[dict, in
     return {"provider": "fastembed", "config": {"model": model}}, dims
 
 
-if LLM_PROVIDER == "litellm":
+if KEYLESS:
+    # No LLM, no API key. fastembed runs embeddings locally; add_memory stores
+    # content verbatim (infer forced False). The llm block carries a placeholder
+    # key only so the client constructs — it is never called.
+    embedder, embed_dims = _fastembed_embedder()
+    mem0_config = {
+        "llm": {"provider": "openai", "config": {"model": "gpt-4o-mini", "api_key": "keyless-unused"}},
+        "embedder": embedder,
+        "vector_store": {"provider": "qdrant", "config": _qdrant_cfg(embed_dims)},
+        "history_db_path": HISTORY_DB,
+    }
+    log.info("backend=none (KEYLESS) embedder=fastembed dims=%d - LLM disabled, infer forced False", embed_dims)
+
+elif LLM_PROVIDER == "litellm":
     # Universal: any provider key + model string (anthropic/..., openai/..., openrouter/..., etc.)
     # Embeddings run locally via fastembed — no second API key needed.
     LLM_API_KEY = os.environ.get("LLM_API_KEY")
@@ -211,9 +231,10 @@ def add_memory(content: str, agent: str, project: str | None = None, metadata: d
     meta = dict(metadata or {})
     meta["source"] = agent
     namespace = f"{FLEET_NS}:{project}" if project else FLEET_NS
-    result = memory.add(content, user_id=namespace, metadata=meta, infer=infer)
+    eff_infer = infer and not KEYLESS
+    result = memory.add(content, user_id=namespace, metadata=meta, infer=eff_infer)
     _emit_metric(len(content))
-    log.info("add_memory by %s ns=%s infer=%s -> %s", agent, namespace, infer, result)
+    log.info("add_memory by %s ns=%s infer=%s -> %s", agent, namespace, eff_infer, result)
     return json.dumps(result, default=str)
 
 
