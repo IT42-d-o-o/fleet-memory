@@ -40,6 +40,16 @@ def test_midsentence_pronoun_is_clean():
     print("midsentence pronoun clean OK")
 
 
+def test_relative_that_is_clean():
+    # 'that'/'this' as a relative pronoun after a noun must NOT flag, but a
+    # clause-starting demonstrative still must.
+    assert detect("The detector ignores pronouns that have a local antecedent") == []
+    assert detect("Use the index that is rebuilt nightly by the timer") == []
+    f = detect("The index is built but that should be rebuilt nightly")
+    assert any("dangling demonstrative" in x for x in f), f
+    print("relative-that clean OK")
+
+
 def test_subject_rules():
     assert "content does not contain the subject" in detect("FastAPI app on CT357", subject="Likvidator")
     assert detect("Likvidator runs on CT357", subject="Likvidator") == []
@@ -68,6 +78,7 @@ if __name__ == "__main__":
         test_leading_deixis_flagged,
         test_dangling_demonstrative_flagged,
         test_midsentence_pronoun_is_clean,
+        test_relative_that_is_clean,
         test_subject_rules,
         test_empty_content,
         test_self_check_shape,

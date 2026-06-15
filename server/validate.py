@@ -31,6 +31,14 @@ VERBISH = {
 }
 
 _DEMONSTRATIVES = {"this", "that", "these", "those"}
+
+# Conjunctions / clause-break words. A demonstrative is only "dangling" when it
+# starts a clause (position 0 or right after one of these). After a noun it is a
+# relative pronoun ("pronouns that have ...") and must NOT be flagged.
+_CLAUSE_START = {
+    "and", "but", "or", "so", "yet", "because", "while", "then",
+    "thus", "therefore", "however", "although", "since",
+}
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_./:@-]+")
 
 
@@ -48,11 +56,15 @@ def detect(content: str, subject: str | None = None) -> list[str]:
     if toks[0] in PRON_LEAD and toks[0] not in _DEMONSTRATIVES:
         flags.append(f"opens with unresolved reference '{toks[0]}'")
 
-    # 2. Dangling demonstrative — "this/that/these/those" + verb-ish, no noun.
+    # 2. Dangling demonstrative — "this/that/these/those" + verb-ish, no noun,
+    #    but only when it starts a clause (else it's a relative pronoun after a
+    #    noun, e.g. "pronouns that have ...", which is fine).
     for i in range(len(toks) - 1):
         if toks[i] in _DEMONSTRATIVES and toks[i + 1] in VERBISH:
-            flags.append(f"dangling demonstrative '{toks[i]} {toks[i + 1]}'")
-            break
+            at_clause_start = i == 0 or toks[i - 1] in _CLAUSE_START
+            if at_clause_start:
+                flags.append(f"dangling demonstrative '{toks[i]} {toks[i + 1]}'")
+                break
 
     # 3/4. Subject rules (only when a subject is supplied).
     if subject:
