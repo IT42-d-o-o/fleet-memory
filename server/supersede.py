@@ -108,14 +108,16 @@ def extract_records(all_points) -> list[dict]:
     records = []
     for pt in all_points:
         p = pt.payload or {}
+        # mem0 keeps metadata FLAT at the top level of the Qdrant payload — subject
+        # was written there by subject_backfill.py. Read it flat (with a legacy
+        # nested fallback for safety).
         meta = p.get("metadata") or {}
         records.append({
             "id": str(pt.id),
             "content": p.get("data", "") or p.get("memory", "") or p.get("text", ""),
             "user_id": p.get("user_id", ""),
             "created_at": p.get("created_at", "") or meta.get("created_at", ""),
-            "subject": meta.get("subject"),
-            # keep the raw payload for later metadata merge
+            "subject": p.get("subject") or meta.get("subject"),
             "_payload": p,
         })
     return records
@@ -316,16 +318,15 @@ def write_lineage(
     dry_run: bool,
 ) -> None:
     """
-    Merge lineage_fields into payload["metadata"] in-place via set_payload.
-    Reads existing metadata first so unrelated keys are preserved.
+    Write lineage_fields as FLAT top-level payload keys via set_payload.
+    mem0 stores metadata flat and reassembles it into a nested dict only in search
+    results, so current/superseded_by/supersedes/valid_from go top-level. set_payload
+    merges, so unrelated keys (subject, category, source) are preserved.
     """
-    existing_meta = dict(existing_payload.get("metadata") or {})
-    existing_meta.update(lineage_fields)
-
     if not dry_run:
         client.set_payload(
             collection_name=COLLECTION,
-            payload={"metadata": existing_meta},
+            payload=dict(lineage_fields),
             points=[point_id],
         )
 

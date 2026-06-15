@@ -218,10 +218,17 @@ def _fetch_record(point_id: str) -> dict | None:
     if not recs:
         return None
     p = recs[0].payload or {}
+    # Raw Qdrant payload is flat: mem0 stores metadata keys (category, source,
+    # subject, current, superseded_by, ...) top-level and only nests them into a
+    # "metadata" dict in search results. Reassemble that shape here so callers can
+    # read hit["metadata"]["superseded_by"] uniformly.
+    _reserved = {"data", "memory", "text", "text_lemmatized", "hash",
+                 "user_id", "created_at", "updated_at"}
+    meta = {k: v for k, v in p.items() if k not in _reserved}
     return {
         "id": str(recs[0].id),
         "memory": p.get("data") or p.get("memory") or p.get("text") or "",
-        "metadata": p.get("metadata") or {},
+        "metadata": meta,
     }
 
 

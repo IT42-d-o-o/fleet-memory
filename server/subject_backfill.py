@@ -121,9 +121,16 @@ def canonical_subject(raw: str) -> str:
 
 EXTRACTION_PROMPT = (
     'Given this memory fact, return JSON {"subject": "<the single explicit entity the fact '
-    "is about — a concrete name/host/service/path/person, e.g. CT356, Observus, InfraAtlas, "
-    'Tomislav>"}. The subject MUST be a concrete noun present in or directly named by the fact, '
-    "never a pronoun. Fact: "
+    "is about — a concrete name/host/service/project/person, e.g. CT356, Observus, InfraAtlas, "
+    'Tomislav>"}. The subject MUST be a concrete named noun present in or directly named by the '
+    "fact, never a pronoun. "
+    "Resolve possessives/genitives to the underlying named entity, never the possessive phrase: "
+    "for \"User's login page\" the subject is the project or service the login page belongs to, "
+    "NOT \"User's login page\"; for \"Tomislav's repository\" return the repository or project "
+    "name if named, else \"Tomislav\". Prefer a known entity named elsewhere in the fact (a CT id, "
+    "project slug, service, host, or person) over a generic descriptive phrase. Never return a "
+    "file path or a multi-word descriptive phrase as the subject when a named entity is present. "
+    "Fact: "
 )
 
 
@@ -266,13 +273,13 @@ def main() -> None:
         log.info("%-20s ← %-20s | %s", canonical, raw_subject, text[:80])
 
         if not args.dry_run:
-            # Merge into existing metadata — never clobber other keys
-            merged_meta = dict(existing_meta)
-            merged_meta["subject"] = canonical
-            merged_meta["raw_subject"] = raw_subject
+            # mem0 stores metadata as FLAT top-level Qdrant payload keys (category,
+            # source, ...) and reassembles them into a nested dict only in search
+            # results. So write subject as a flat top-level key — set_payload merges,
+            # leaving category/source untouched.
             client.set_payload(
                 collection_name=COLLECTION,
-                payload={"metadata": merged_meta},
+                payload={"subject": canonical, "raw_subject": raw_subject},
                 points=[point.id],
             )
 
