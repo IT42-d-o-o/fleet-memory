@@ -7,7 +7,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: pip3 install --no-cache-dir --break-system-packages pyflakes
-      - run: python3 -m pyflakes miner/miner.py miner/_llm.py miner/_forge.py server/server.py server/fts_index.py server/rebuild_fts.py
+      - run: python3 -m pyflakes miner/miner.py miner/_llm.py miner/_forge.py server/server.py server/fts_index.py server/rebuild_fts.py server/validate.py
 
   test-fts:
     runs-on: [self-hosted, linux]
@@ -15,6 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: python3 tests/test_fts.py
+
+  test-validate:
+    runs-on: [self-hosted, linux]
+    container: catthehacker/ubuntu:act-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tests/test_validate.py
 
   miner-dry-run:
     runs-on: [self-hosted, linux]

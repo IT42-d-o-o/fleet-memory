@@ -24,6 +24,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
 from fts_index import FtsIndex, rrf_merge
+from validate import detect, build_self_check
 
 logging.basicConfig(
     level=logging.INFO,
@@ -226,7 +227,7 @@ def _emit_metric(text_len: int) -> None:
 
 # --- MCP tools -----------------------------------------------------------
 @mcp.tool()
-def add_memory(content: str, agent: str, project: str | None = None, metadata: dict[str, Any] | None = None, infer: bool = False) -> str:
+def add_memory(content: str, agent: str, project: str | None = None, metadata: dict[str, Any] | None = None, infer: bool = False, subject: str | None = None, self_checked: bool = False) -> str:
     """Store a memory in the shared fleet memory.
 
     content:  the fact / decision / lesson to remember.
@@ -236,10 +237,31 @@ def add_memory(content: str, agent: str, project: str | None = None, metadata: d
     infer:    False (default) stores content verbatim as one atomic fact — use when the
               caller already extracted a single fact. True re-runs mem0 LLM extraction to
               split/dedup — use only for raw multi-fact conversation snippets.
+    subject:  optional explicit subject of the memory. When given it is validated
+              (must be explicit and present in content) and stored in metadata.
+    self_checked: set True to bypass the deterministic write guardrail when you have
+              confirmed the memory is self-contained despite a flag (logged as override).
+
+    Write guardrail: a deterministic detector (no LLM) screens for vague,
+    context-dependent candidates. If it flags one, NOTHING is stored and a
+    self_check JSON is returned — rewrite the memory self-contained, or resubmit
+    unchanged with self_checked=true. Clean candidates are stored immediately.
     """
+    namespace = f"{FLEET_NS}:{project}" if project else FLEET_NS
+
+    # Deterministic write guardrail — challenge only on detected ambiguity.
+    flags = detect(content, subject)
+    if flags:
+        if not self_checked:
+            log.info("add_memory self_check by %s ns=%s flags=%s", agent, namespace, flags)
+            return json.dumps(build_self_check(flags))
+        log.warning("add_memory self_checked OVERRIDE by %s ns=%s flags=%s content=%r",
+                    agent, namespace, flags, content[:160])
+
     meta = dict(metadata or {})
     meta["source"] = agent
-    namespace = f"{FLEET_NS}:{project}" if project else FLEET_NS
+    if subject:
+        meta.setdefault("subject", subject)
     eff_infer = infer and not KEYLESS
     result = memory.add(content, user_id=namespace, metadata=meta, infer=eff_infer)
     # Mirror each stored memory into the FTS5 side index (best-effort).
