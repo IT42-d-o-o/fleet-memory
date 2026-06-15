@@ -23,6 +23,8 @@ from mcp.server.fastmcp import FastMCP
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
+from fts_index import FtsIndex, rrf_merge
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -44,6 +46,7 @@ QDRANT_HOST = os.environ.get("QDRANT_HOST", "127.0.0.1")
 QDRANT_PORT = int(os.environ.get("QDRANT_PORT", "6333"))
 COLLECTION = os.environ.get("MEM0_COLLECTION", "local_ai_cross_agent_memory")
 HISTORY_DB = os.environ.get("MEM0_HISTORY_DB", "/opt/memory-mcp/history.db")
+FTS_DB = os.environ.get("MEM0_FTS_DB", "/opt/memory-mcp/fts.db")
 FLEET_NS = os.environ.get("MEM0_NAMESPACE", "fleet")
 MCP_HOST = os.environ.get("MCP_HOST", "0.0.0.0")
 MCP_PORT = int(os.environ.get("MCP_PORT", "8800"))
@@ -189,6 +192,12 @@ else:
 log.info("init mem0 - qdrant=%s:%s collection=%s", QDRANT_HOST, QDRANT_PORT, COLLECTION)
 memory = Memory.from_config(mem0_config)
 
+# FTS5 keyword side index for hybrid (semantic + BM25) retrieval. Derived mirror
+# of Qdrant; populate/reconcile with rebuild_fts.py. Best-effort — failures here
+# never break the primary mem0 path.
+fts = FtsIndex(FTS_DB)
+log.info("fts side index ready at %s (%d rows)", FTS_DB, fts.count())
+
 mcp = FastMCP(
     "memory-mcp",
     host=MCP_HOST,
@@ -233,6 +242,10 @@ def add_memory(content: str, agent: str, project: str | None = None, metadata: d
     namespace = f"{FLEET_NS}:{project}" if project else FLEET_NS
     eff_infer = infer and not KEYLESS
     result = memory.add(content, user_id=namespace, metadata=meta, infer=eff_infer)
+    # Mirror each stored memory into the FTS5 side index (best-effort).
+    for r in (result.get("results") or []):
+        if r.get("id"):
+            fts.mirror(r["id"], namespace, r.get("memory") or content, meta)
     _emit_metric(len(content))
     log.info("add_memory by %s ns=%s infer=%s -> %s", agent, namespace, eff_infer, result)
     return json.dumps(result, default=str)
@@ -248,22 +261,28 @@ def search_memory(query: str, limit: int = 5, project: str | None = None) -> str
     """
     if not query or not query.strip():
         return json.dumps({"results": []})
-    if project:
-        ns = f"{FLEET_NS}:{project}"
-        r1 = memory.search(query, filters={"user_id": ns}, limit=limit)
-        r2 = memory.search(query, filters={"user_id": FLEET_NS}, limit=limit)
-        seen: set = set()
-        merged: list = []
-        for r in (r1.get("results", []) + r2.get("results", [])):
-            if r["id"] not in seen:
-                seen.add(r["id"])
-                merged.append(r)
-        merged.sort(key=lambda x: x.get("score", 0), reverse=True)
-        result: Any = {"results": merged[:limit]}
-    else:
-        result = memory.search(query, filters={"user_id": FLEET_NS}, limit=limit)
+
+    namespaces = [f"{FLEET_NS}:{project}", FLEET_NS] if project else [FLEET_NS]
+
+    # 1. semantic retrieval (Qdrant via mem0), deduped across namespaces by score
+    seen: set = set()
+    semantic: list = []
+    for ns in namespaces:
+        r = memory.search(query, filters={"user_id": ns}, limit=limit)
+        for item in r.get("results", []):
+            if item["id"] not in seen:
+                seen.add(item["id"])
+                semantic.append(item)
+    semantic.sort(key=lambda x: x.get("score", 0), reverse=True)
+
+    # 2. keyword retrieval (FTS5 BM25) over the same namespaces
+    keyword = fts.search(query, namespaces, limit)
+
+    # 3. fuse with Reciprocal Rank Fusion (scale-free; no score normalization)
+    merged = rrf_merge(semantic, keyword, limit)
+
     _emit_metric(len(query))
-    return json.dumps(result, default=str)
+    return json.dumps({"results": merged}, default=str)
 
 
 if __name__ == "__main__":

@@ -2,24 +2,27 @@ on: [push, pull_request]
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
+    container: catthehacker/ubuntu:act-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install pyflakes
-      - run: python -m pyflakes miner/miner.py miner/_llm.py miner/_forge.py server/server.py
+      - run: pip3 install --no-cache-dir --break-system-packages pyflakes
+      - run: python3 -m pyflakes miner/miner.py miner/_llm.py miner/_forge.py server/server.py server/fts_index.py server/rebuild_fts.py
+
+  test-fts:
+    runs-on: [self-hosted, linux]
+    container: catthehacker/ubuntu:act-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tests/test_fts.py
 
   miner-dry-run:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux]
+    container: catthehacker/ubuntu:act-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install -r miner/requirements.txt
-      - run: python miner/miner.py --dry-run --limit 1
+      - run: pip3 install --no-cache-dir --break-system-packages -r miner/requirements.txt
+      - run: python3 miner/miner.py --dry-run --limit 1
         env:
           FLEET_MEMORY_URL: "http://127.0.0.1:8800/mcp"
           LLM_BASE_URL: "https://api.openai.com/v1"
