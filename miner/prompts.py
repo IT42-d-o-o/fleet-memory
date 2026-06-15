@@ -12,7 +12,8 @@ Categories:
 
 Output ONLY a JSON array of objects. Each object:
   "category": one of fact/decision/project/lesson/tool/user
-  "content": atomic fact as a clear complete sentence (max 80 words)
+  "subject": the explicit entity the fact is about — a concrete name/host/service/path/person (e.g. "CT356", "Observus", "Tomislav"). NEVER a pronoun (it/this/that/they). The content MUST contain this exact subject.
+  "content": atomic, self-contained fact as a clear complete sentence (max 80 words). Start with the subject where natural; it must read correctly with zero prior context (no leading "It"/"This"/"They", no dangling references)
 
 STRICT SKIP LIST — output nothing for:
 - In-progress coding steps, file edits, command execution narration ("I will now...", "Running...", "Patching...")
@@ -34,9 +35,9 @@ Output valid JSON only, no markdown fences, no explanation text.
 
 Example output:
 [
-  {"category": "tool", "content": "ComfyUI runs at 127.0.0.1:8188, started via: docker compose -f C:/AI/services/docker-compose/compose.comfyui.yml up -d"},
-  {"category": "decision", "content": "Chose qwen3-coder:30b over qwen3:8b for transcript mining because extraction quality matters more than speed for institutional knowledge backfill"},
-  {"category": "lesson", "content": "mem0 infer=True dedup does not catch near-duplicates from repeated file reads across sessions; pre-filter tool result content before sending to extraction LLM"}
+  {"category": "tool", "subject": "ComfyUI", "content": "ComfyUI runs at 127.0.0.1:8188, started via: docker compose -f C:/AI/services/docker-compose/compose.comfyui.yml up -d"},
+  {"category": "decision", "subject": "transcript miner", "content": "The transcript miner uses qwen3-coder:30b over qwen3:8b because extraction quality matters more than speed for institutional knowledge backfill"},
+  {"category": "lesson", "subject": "mem0", "content": "mem0 infer=True dedup does not catch near-duplicates from repeated file reads across sessions; pre-filter tool result content before sending to extraction LLM"}
 ]"""
 
 
@@ -52,7 +53,8 @@ Categories:
 
 Output ONLY a JSON array of objects. Each object:
   "category": one of fact/decision/project/lesson/tool/user
-  "content": atomic fact as a clear complete sentence (max 80 words)
+  "subject": the explicit entity the fact is about — a concrete name/host/service/path/person (e.g. "CT356", "Observus", "Tomislav"). NEVER a pronoun (it/this/that/they). The content MUST contain this exact subject.
+  "content": atomic, self-contained fact as a clear complete sentence (max 80 words). Start with the subject where natural; it must read correctly with zero prior context (no leading "It"/"This"/"They", no dangling references)
 
 STRICT SKIP LIST — output nothing for:
 - Generic software documentation (standard tool behavior, not project-specific)
@@ -78,7 +80,8 @@ Categories:
 
 Output ONLY a JSON array of objects. Each object:
   "category": one of fact/decision/project/lesson/tool/user
-  "content": atomic fact as a clear complete sentence (max 80 words)
+  "subject": the explicit entity the fact is about — a concrete name/host/service/path/person (e.g. "CT356", "Observus", "Tomislav"). NEVER a pronoun (it/this/that/they). The content MUST contain this exact subject.
+  "content": atomic, self-contained fact as a clear complete sentence (max 80 words). Start with the subject where natural; it must read correctly with zero prior context (no leading "It"/"This"/"They", no dangling references)
 
 STRICT SKIP LIST — output nothing for:
 - Commits that only say "fix typo", "update README", "WIP", "chore: bump version" with no meaningful body
@@ -105,7 +108,8 @@ Categories:
 
 Output ONLY a JSON array of objects. Each object:
   "category": one of fact/decision/project/lesson/tool/user
-  "content": atomic fact as a clear complete sentence (max 80 words)
+  "subject": the explicit entity the fact is about — a concrete name/host/service/path/person (e.g. "CT356", "Observus", "Tomislav"). NEVER a pronoun (it/this/that/they). The content MUST contain this exact subject.
+  "content": atomic, self-contained fact as a clear complete sentence (max 80 words). Start with the subject where natural; it must read correctly with zero prior context (no leading "It"/"This"/"They", no dangling references)
 
 STRICT SKIP LIST — output nothing for:
 - Generic feature requests with no implementation detail or resolution

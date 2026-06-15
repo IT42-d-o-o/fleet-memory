@@ -535,11 +535,12 @@ def extract_facts(chunk: str, model: str, system: str | None = None) -> list[dic
     return []
 
 
-def add_to_fleet_memory(content: str, category: str, dry_run: bool, project: str | None = None) -> bool:
+def add_to_fleet_memory(content: str, category: str, dry_run: bool, project: str | None = None, subject: str | None = None) -> bool:
     """Write one fact to fleet memory via MCP HTTP."""
     if dry_run:
         proj_tag = f"[{project}] " if project else ""
-        logger.info(f"  [DRY] [{category}] {proj_tag}{content[:80]}")
+        subj_tag = f"<{subject}> " if subject else ""
+        logger.info(f"  [DRY] [{category}] {proj_tag}{subj_tag}{content[:80]}")
         return True
     arguments: dict = {
         "content": content,
@@ -548,6 +549,8 @@ def add_to_fleet_memory(content: str, category: str, dry_run: bool, project: str
     }
     if project:
         arguments["project"] = project
+    if subject:
+        arguments["subject"] = subject
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -571,9 +574,21 @@ def add_to_fleet_memory(content: str, category: str, dry_run: bool, project: str
                 )
             resp.raise_for_status()
             body = resp.json()
-            if body.get("result", {}).get("isError"):
-                err = body["result"].get("content", [{}])[0].get("text", "unknown")
+            result = body.get("result", {})
+            if result.get("isError"):
+                err = result.get("content", [{}])[0].get("text", "unknown")
                 logger.error(f"fleet memory rejected write: {err[:120]}")
+                return False
+            # The write guardrail returns a successful tool result whose payload
+            # says stored:false when the candidate looks vague. Treat that as a
+            # non-write (do NOT count it as a written fact).
+            try:
+                text = result.get("content", [{}])[0].get("text", "")
+                out = json.loads(text) if text else {}
+            except (ValueError, TypeError, IndexError, AttributeError):
+                out = {}
+            if out.get("stored") is False or out.get("error") == "MEMORY_NEEDS_SELF_CHECK":
+                logger.warning(f"  fleet memory self_check dropped fact: flags={out.get('flags')} content={content[:80]}")
                 return False
             return True
         except Exception as e:
@@ -602,9 +617,10 @@ def _extract_and_write(
         for item in items:
             cat = item.get("category", "fact").lower()
             content = item.get("content", "").strip()
+            subject = (item.get("subject") or "").strip() or None
             if not content or len(content) < 10:
                 continue
-            if add_to_fleet_memory(content, cat, dry_run, project=project):
+            if add_to_fleet_memory(content, cat, dry_run, project=project, subject=subject):
                 facts_written += 1
             time.sleep(0.1)
     return facts_written
