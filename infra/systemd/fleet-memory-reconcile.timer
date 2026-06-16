@@ -1,0 +1,13 @@
+[Unit]
+Description=Nightly fleet-memory supersession reconciliation
+Documentation=https://192.168.50.135:3000/ai/fleet-memory
+
+[Timer]
+# Nightly at 03:00 local time. Persistent catches up a missed run after the
+# host/container was down at the scheduled time.
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target
