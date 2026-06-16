@@ -1,0 +1,15 @@
+[Unit]
+Description=fleet-memory supersession reconciliation (subject backfill + supersede)
+Documentation=https://192.168.50.135:3000/ai/fleet-memory
+After=network-online.target memory-mcp.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Wrapper runs subject_backfill.py then supersede.py via the app venv. Both
+# scripts read the OpenAI key from Vault via /etc/memory-mcp/vault-token.
+ExecStart=/opt/memory-mcp/reconcile.sh
+WorkingDirectory=/opt/memory-mcp
+# A full reconcile is ~6 min today; allow generous headroom as the store grows.
+TimeoutStartSec=3600
+Nice=10

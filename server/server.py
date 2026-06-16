@@ -19,6 +19,7 @@ from typing import Any
 
 import uvicorn
 from mem0 import Memory
+from qdrant_client import QdrantClient
 from mcp.server.fastmcp import FastMCP
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
@@ -199,6 +200,94 @@ memory = Memory.from_config(mem0_config)
 fts = FtsIndex(FTS_DB)
 log.info("fts side index ready at %s (%d rows)", FTS_DB, fts.count())
 
+# Direct Qdrant handle for supersession resolution at read time. mem0's search
+# returns scored hits but offers no get-by-id; we use this to (a) fetch metadata
+# for keyword-only hits the FTS index returns without it, and (b) swap a stale
+# hit for its current head. Lineage fields (current/superseded_by) are written
+# into payload["metadata"] by supersede.py.
+qdrant = QdrantClient(host=QDRANT_HOST, port=QDRANT_PORT, check_compatibility=False)
+
+
+def _fetch_record(point_id: str) -> dict | None:
+    """Fetch one point by id and shape it like a search hit. None if absent."""
+    try:
+        recs = qdrant.retrieve(COLLECTION, ids=[point_id], with_payload=True, with_vectors=False)
+    except Exception as exc:  # noqa: BLE001 — resolution is best-effort
+        log.warning("qdrant retrieve failed id=%s: %s", point_id, exc)
+        return None
+    if not recs:
+        return None
+    p = recs[0].payload or {}
+    # Raw Qdrant payload is flat: mem0 stores metadata keys (category, source,
+    # subject, current, superseded_by, ...) top-level and only nests them into a
+    # "metadata" dict in search results. Reassemble that shape here so callers can
+    # read hit["metadata"]["superseded_by"] uniformly.
+    _reserved = {"data", "memory", "text", "text_lemmatized", "hash",
+                 "user_id", "created_at", "updated_at"}
+    meta = {k: v for k, v in p.items() if k not in _reserved}
+    return {
+        "id": str(recs[0].id),
+        "memory": p.get("data") or p.get("memory") or p.get("text") or "",
+        "metadata": meta,
+    }
+
+
+def _resolve_supersession(hits: list[dict], include_superseded: bool) -> list[dict]:
+    """Replace each stale hit with its current head, deduping heads.
+
+    A hit is stale when its metadata carries current=False / a superseded_by id.
+    Facts not yet processed by supersede.py have no lineage fields and default to
+    current (never swapped). When include_superseded is True this is a no-op.
+    """
+    if include_superseded:
+        return hits
+    out: list[dict] = []
+    seen: set = set()
+    for hit in hits:
+        meta = hit.get("metadata") or {}
+        # Keyword-only hits arrive without metadata — pull it so we can judge them.
+        if "current" not in meta and "superseded_by" not in meta:
+            fetched = _fetch_record(hit.get("id"))
+            if fetched:
+                meta = fetched.get("metadata") or {}
+        superseded_by = meta.get("superseded_by")
+        is_current = meta.get("current", True)
+        if is_current or not superseded_by:
+            if hit["id"] not in seen:
+                seen.add(hit["id"])
+                out.append(hit)
+            continue
+        # Stale: walk to the current head (one hop normally; loop-guard for safety).
+        head_id, guard = superseded_by, 0
+        head = None
+        while head_id and guard < 10:
+            cand = _fetch_record(head_id)
+            if not cand:
+                break
+            head = cand
+            nxt = (cand.get("metadata") or {}).get("superseded_by")
+            if not nxt or nxt == head_id:
+                break
+            head_id, guard = nxt, guard + 1
+        if head is None:
+            if hit["id"] not in seen:
+                seen.add(hit["id"])
+                out.append(hit)
+            continue
+        if head["id"] not in seen:
+            seen.add(head["id"])
+            # Carry the stale hit's ranking so result ordering stays stable.
+            out.append({
+                **head,
+                "rrf_score": hit.get("rrf_score"),
+                "semantic_score": hit.get("semantic_score"),
+                "keyword_score": hit.get("keyword_score"),
+                "score": hit.get("score", hit.get("rrf_score")),
+                "superseded_from": hit["id"],
+            })
+        # else head already present — drop the stale duplicate
+    return out
+
 mcp = FastMCP(
     "memory-mcp",
     host=MCP_HOST,
@@ -274,23 +363,29 @@ def add_memory(content: str, agent: str, project: str | None = None, metadata: d
 
 
 @mcp.tool()
-def search_memory(query: str, limit: int = 5, project: str | None = None) -> str:
+def search_memory(query: str, limit: int = 5, project: str | None = None,
+                  include_superseded: bool = False) -> str:
     """Search the shared fleet memory.
 
     query:   natural-language query.
     limit:   max results (default 5).
     project: if set, searches fleet:{project} and global fleet merged by score.
+    include_superseded: when True, returns stale facts as-is instead of resolving
+             each to its current head (default False). Use to inspect fact history.
     """
     if not query or not query.strip():
         return json.dumps({"results": []})
 
     namespaces = [f"{FLEET_NS}:{project}", FLEET_NS] if project else [FLEET_NS]
 
+    # Over-fetch so the supersession swap/dedup still yields up to `limit` rows.
+    fetch_n = limit if include_superseded else limit * 3
+
     # 1. semantic retrieval (Qdrant via mem0), deduped across namespaces by score
     seen: set = set()
     semantic: list = []
     for ns in namespaces:
-        r = memory.search(query, filters={"user_id": ns}, limit=limit)
+        r = memory.search(query, filters={"user_id": ns}, limit=fetch_n)
         for item in r.get("results", []):
             if item["id"] not in seen:
                 seen.add(item["id"])
@@ -298,13 +393,16 @@ def search_memory(query: str, limit: int = 5, project: str | None = None) -> str
     semantic.sort(key=lambda x: x.get("score", 0), reverse=True)
 
     # 2. keyword retrieval (FTS5 BM25) over the same namespaces
-    keyword = fts.search(query, namespaces, limit)
+    keyword = fts.search(query, namespaces, fetch_n)
 
     # 3. fuse with Reciprocal Rank Fusion (scale-free; no score normalization)
-    merged = rrf_merge(semantic, keyword, limit)
+    merged = rrf_merge(semantic, keyword, fetch_n)
+
+    # 4. resolve supersession — swap each stale hit for its current head — then trim
+    resolved = _resolve_supersession(merged, include_superseded)
 
     _emit_metric(len(query))
-    return json.dumps({"results": merged}, default=str)
+    return json.dumps({"results": resolved[:limit]}, default=str)
 
 
 if __name__ == "__main__":
