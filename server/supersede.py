@@ -66,6 +66,10 @@ log = logging.getLogger("supersede")
 COLLECTION = "local_ai_cross_agent_memory"
 PUSHGATEWAY = "http://192.168.50.223:9091"
 OPENAI_MODEL = "gpt-4o-mini"
+# Subject groups larger than this are skipped (all marked current) rather than
+# sent to the judge — too big for one call and almost always a generic catch-all
+# subject (e.g. 'user') with no real supersession.
+MAX_LLM_GROUP = 40
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -129,27 +133,43 @@ def extract_records(all_points) -> list[dict]:
 SYSTEM_PROMPT = """\
 You are a supersession judge for a knowledge base.
 
-You receive a numbered list of facts that all concern the same SUBJECT.
-Your task: cluster them into CLAIM THREADS.
+You receive a NUMBERED list of facts that all concern the SAME SUBJECT.
+Group them into CLAIM THREADS.
 
-A CLAIM THREAD is a set of facts that assert the SAME ATTRIBUTE or STATE of
-the subject (e.g. "where the database file lives", "which TCP port it uses",
-"the deployment command", "the container number it runs in").
+A CLAIM THREAD is two or more facts that assert the SAME SPECIFIC ATTRIBUTE of
+the subject, where a NEWER fact REPLACES an OLDER one because they cannot both
+be true at the same time (the value changed, moved, was corrected, or restated).
 
-Rules:
-- Facts about DIFFERENT attributes belong to DIFFERENT threads — they do NOT
-  supersede each other.
-- A fact that is clearly unique (no other fact contests the same attribute)
-  forms its own single-member thread.
-- Do NOT merge facts merely because they mention the same subject — only merge
-  when they literally assert the same attribute.
+THE TEST for putting two facts in one thread — ask: "Could both facts be true
+AT THE SAME TIME?"
+- YES (they describe DIFFERENT attributes, or one adds detail, or both still
+  hold) -> DIFFERENT threads. They do NOT supersede each other.
+- NO (they give conflicting/replacing values for the ONE same attribute)
+  -> SAME thread; the newest by created date is current.
+
+Default to SEPARATE threads whenever unsure. Over-merging destroys valid facts;
+keeping facts apart is the safe error. Different attributes are NEVER the same
+thread even for the same subject — e.g. deployment port vs runtime framework vs
+container id vs database path vs license key vs feature list are all distinct.
 
 Return ONLY valid JSON — no prose, no markdown fence — in this exact shape:
-{"threads": [[id1, id2, ...], ...]}
+{"threads": [[n, n, ...], ...]}
+Each inner array lists the NUMBERS (the integer shown before each fact) of the
+facts in one thread. A fact that shares a thread with no other is its own
+single-member array. Every input number must appear in exactly one thread.
 
-Each inner array is one thread. Member ids are the point IDs from the input.
-Order within a thread does not matter — the caller will sort by created_at.
-Include every input id in exactly one thread.
+EXAMPLE
+Input facts about subject "atlas":
+1. created='2026-01-01' content='Atlas runs on port 5093'
+2. created='2026-02-01' content='Atlas runs on ASP.NET Core 9'
+3. created='2026-01-10' content='Atlas database is at /opt/atlas/app.db'
+4. created='2026-03-01' content='Atlas database moved to /opt/atlas-data/app.db'
+5. created='2026-02-15' content='Atlas Demo instance is CT359'
+Correct output:
+{"threads": [[1], [2], [3, 4], [5]]}
+Reason: port, framework and demo-instance are distinct attributes that can all be
+true simultaneously -> separate threads. Facts 3 and 4 are the SAME attribute
+(database location) with a changed value -> one thread; 4 is newer = current.
 """
 
 def call_llm(facts: list[dict], api_key: str) -> tuple[list[list[str]], int, int]:
@@ -162,7 +182,7 @@ def call_llm(facts: list[dict], api_key: str) -> tuple[list[list[str]], int, int
     import httpx  # available in venv
 
     numbered = "\n".join(
-        f"{i+1}. id={f['id']} created={f['created_at']!r} content={f['content']!r}"
+        f"{i+1}. created={f['created_at']!r} content={f['content']!r}"
         for i, f in enumerate(facts)
     )
     user_msg = f"Subject group — {len(facts)} facts:\n\n{numbered}"
@@ -195,14 +215,29 @@ def call_llm(facts: list[dict], api_key: str) -> tuple[list[list[str]], int, int
     parsed = json.loads(raw_text)
     threads_raw = parsed.get("threads", [])
 
-    # Validate: must be list of lists of strings
+    # The judge returns 1-based item NUMBERS, not ids — map them back to real
+    # point ids here. This is deterministic and immune to the model echoing
+    # indices, hallucinating UUIDs, or reformatting ids.
     if not isinstance(threads_raw, list):
         raise ValueError(f"Expected list of threads, got: {type(threads_raw)}")
-    threads = []
+    n_facts = len(facts)
+    threads: list[list[str]] = []
     for t in threads_raw:
         if not isinstance(t, list):
             raise ValueError(f"Thread member is not a list: {t!r}")
-        threads.append([str(x) for x in t])
+        ids: list[str] = []
+        for x in t:
+            try:
+                n = int(x)
+            except (ValueError, TypeError):
+                log.warning("judge returned non-integer thread member %r — skipping", x)
+                continue
+            if 1 <= n <= n_facts:
+                ids.append(facts[n - 1]["id"])
+            else:
+                log.warning("judge returned out-of-range index %d (facts=%d) — skipping", n, n_facts)
+        if ids:
+            threads.append(ids)
 
     return threads, prompt_tokens, completion_tokens
 
@@ -387,11 +422,16 @@ def main() -> None:
 
     id_to_record: dict[str, dict] = {r["id"]: r for r in valid_records}
 
-    # --- Group by (user_id, subject) ----------------------------------------
-    groups: dict[tuple, list[dict]] = defaultdict(list)
+    # --- Group by subject ACROSS namespaces ---------------------------------
+    # Lineage is a property of the entity, not the namespace. The same fact often
+    # lives in both global `fleet` and `fleet:{project}` (e.g. a DB path stated
+    # globally and restated under the project) — grouping by subject only lets a
+    # newer value in one namespace supersede an older value in the other. Server
+    # resolution + project search already span both namespaces, so cross-ns heads
+    # resolve fine.
+    groups: dict[str, list[dict]] = defaultdict(list)
     for rec in valid_records:
-        key = (rec["user_id"], rec["subject"])
-        groups[key].append(rec)
+        groups[rec["subject"]].append(rec)
 
     # --- Process each group -------------------------------------------------
     total_prompt_tokens = 0
@@ -407,17 +447,26 @@ def main() -> None:
         str(pt.id): (pt.payload or {}) for pt in all_points
     }
 
-    for (user_id, subject), group in sorted(groups.items()):
+    for subject, group in sorted(groups.items()):
         if len(group) < min_group:
             # Singletons and below-threshold groups get uniform current=True
             for rec in group:
                 all_lineage[rec["id"]] = singleton_lineage(rec)
             continue
 
-        log.info(
-            "Processing group user_id=%r subject=%r (%d facts)",
-            user_id, subject, len(group),
-        )
+        if len(group) > MAX_LLM_GROUP:
+            # Oversized buckets (e.g. the generic 'user' subject) are too large to
+            # thread meaningfully in one call and almost never hold real
+            # supersession. Mark all current and skip — do not silently truncate.
+            log.warning(
+                "subject=%r has %d facts > MAX_LLM_GROUP=%d — marking all current, skipping judge",
+                subject, len(group), MAX_LLM_GROUP,
+            )
+            for rec in group:
+                all_lineage[rec["id"]] = singleton_lineage(rec)
+            continue
+
+        log.info("Processing group subject=%r (%d facts)", subject, len(group))
 
         # --- Call LLM -------------------------------------------------------
         try:
@@ -426,8 +475,8 @@ def main() -> None:
             total_completion_tokens += ct
         except Exception as exc:
             log.warning(
-                "LLM call failed for group (%r, %r) — skipping group. Error: %s",
-                user_id, subject, exc,
+                "LLM call failed for subject=%r — skipping group. Error: %s",
+                subject, exc,
             )
             # Leave group untouched (no lineage fields written for it this run)
             continue
@@ -439,8 +488,8 @@ def main() -> None:
         extra = thread_ids_flat - group_ids
         if extra:
             log.warning(
-                "LLM returned unknown ids for (%r, %r): %s — removing from threads",
-                user_id, subject, extra,
+                "judge returned unknown ids for subject=%r: %s — removing from threads",
+                subject, extra,
             )
             threads = [[tid for tid in t if tid in group_ids] for t in threads]
             threads = [t for t in threads if t]  # drop empty threads
