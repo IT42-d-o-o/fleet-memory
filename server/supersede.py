@@ -19,6 +19,24 @@ no metadata.subject are skipped.
 
 Run on CT356:
   python3 /opt/memory-mcp/supersede.py [--dry-run] [--subject SLUG] [--min-group N]
+  python3 /opt/memory-mcp/supersede.py --since-state          # incremental fast-path
+  python3 /opt/memory-mcp/supersede.py --since 2026-06-15T00:00:00Z
+
+Incremental mode (--since / --since-state):
+  Only subject groups that contain at least one point with created_at newer than
+  the given timestamp are reprocessed. Groups with no recent point are left
+  completely untouched -- no LLM call, no payload writes, prior lineage preserved.
+
+  Correctness note: when ANY member of a group is newer than since_ts, the WHOLE
+  group is recomputed. This ensures that a new fact which supersedes an old fact
+  from years ago is properly linked -- the old members get re-judged together with
+  the new member in one LLM call.
+
+Concurrency lock (--lock-file, default /opt/memory-mcp/.supersede.lock):
+  Atomic lockfile prevents two overlapping reconciles (e.g. session-close fast-path
+  and the nightly timer). If the lock is already held, the process exits 0 without
+  doing any work -- the running instance covers the window. Bypass with --no-lock
+  for manual / dry-run invocations.
 
 Vault path: secret/Mem0 field openai_api
 Vault token: /etc/memory-mcp/vault-token
@@ -30,6 +48,7 @@ import logging
 import argparse
 import subprocess
 from collections import defaultdict
+from datetime import datetime, timezone
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -85,6 +104,43 @@ def parse_args():
                         help="Restrict to one canonical subject slug (e.g. infraatlas).")
     parser.add_argument("--min-group", metavar="N", type=int, default=2,
                         help="Only process subject groups with at least N facts (default 2).")
+
+    # --- Incremental / since mode -------------------------------------------
+    since_grp = parser.add_mutually_exclusive_group()
+    since_grp.add_argument(
+        "--since", metavar="TIMESTAMP",
+        help=(
+            "ISO8601 UTC timestamp. Only process subject groups that contain at "
+            "least one point with created_at > TIMESTAMP. Groups with no recent "
+            "point are left completely untouched."
+        ),
+    )
+    since_grp.add_argument(
+        "--since-state", action="store_true",
+        help=(
+            "Read the last-run timestamp from --state-file. If the file is "
+            "missing/empty, treat as full run (first run). On a successful "
+            "non-dry-run completion, write the run's start-time to the state "
+            "file for the next incremental run."
+        ),
+    )
+    parser.add_argument(
+        "--state-file", metavar="PATH",
+        default="/opt/memory-mcp/.supersede_last_run",
+        help="State file path for --since-state (default: /opt/memory-mcp/.supersede_last_run).",
+    )
+
+    # --- Concurrency lock ---------------------------------------------------
+    parser.add_argument(
+        "--lock-file", metavar="PATH",
+        default="/opt/memory-mcp/.supersede.lock",
+        help="Atomic lockfile path (default: /opt/memory-mcp/.supersede.lock).",
+    )
+    parser.add_argument(
+        "--no-lock", action="store_true",
+        help="Bypass the concurrency lock (for manual or dry-run invocations).",
+    )
+
     return parser.parse_args()
 
 # ---------------------------------------------------------------------------
@@ -384,12 +440,101 @@ def log_thread(subject: str, thread_ordered: list[str], id_to_record: dict) -> N
 # Main
 # ---------------------------------------------------------------------------
 
+def _acquire_lock(lock_path: str) -> int:
+    """
+    Atomically create the lockfile. Returns a file descriptor on success.
+    Raises FileExistsError if already locked.
+    """
+    return os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+
+
+def _release_lock(fd: int, lock_path: str) -> None:
+    """Close and remove the lockfile."""
+    try:
+        os.close(fd)
+    except OSError:
+        pass
+    try:
+        os.unlink(lock_path)
+    except OSError:
+        pass
+
+
+def _read_state_file(path: str) -> str | None:
+    """Return the ISO8601 timestamp stored in the state file, or None if absent/empty."""
+    try:
+        with open(path) as fh:
+            ts = fh.read().strip()
+        return ts if ts else None
+    except FileNotFoundError:
+        return None
+
+
+def _write_state_file(path: str, ts: str) -> None:
+    """Persist the ISO8601 run-start timestamp to the state file."""
+    with open(path, "w") as fh:
+        fh.write(ts + "\n")
+
+
 def main() -> None:
     args = parse_args()
     dry_run: bool = args.dry_run
     subject_filter: str | None = args.subject
     min_group: int = args.min_group
 
+    # Capture run-start time at the very beginning (used for state-file update).
+    run_start_ts: str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # --- Resolve since_ts ---------------------------------------------------
+    since_ts: str | None = None  # None = full run
+    if args.since:
+        since_ts = args.since
+        log.info("Incremental mode: --since %s", since_ts)
+    elif args.since_state:
+        since_ts = _read_state_file(args.state_file)
+        if since_ts:
+            log.info("Incremental mode: --since-state resolved to %s (from %s)", since_ts, args.state_file)
+        else:
+            log.info("--since-state: state file absent or empty — running full pass")
+
+    # --- Concurrency lock ---------------------------------------------------
+    lock_fd: int | None = None
+    if not args.no_lock:
+        try:
+            lock_fd = _acquire_lock(args.lock_file)
+            log.info("Lock acquired: %s", args.lock_file)
+        except FileExistsError:
+            log.info("Another reconcile is running -- exiting (lock held at %s)", args.lock_file)
+            sys.exit(0)
+
+    run_succeeded = False
+    try:
+        _run(
+            dry_run=dry_run,
+            subject_filter=subject_filter,
+            min_group=min_group,
+            since_ts=since_ts,
+            run_start_ts=run_start_ts,
+            state_file=args.state_file if args.since_state else None,
+        )
+        run_succeeded = True
+    finally:
+        if lock_fd is not None:
+            _release_lock(lock_fd, args.lock_file)
+            log.info("Lock released: %s", args.lock_file)
+
+
+def _run(
+    dry_run: bool,
+    subject_filter: str | None,
+    min_group: int,
+    since_ts: str | None,
+    run_start_ts: str,
+    state_file: str | None,
+) -> None:
+    """
+    Core reconcile logic, extracted so the lock/state wrapper in main() stays clean.
+    """
     api_key = os.environ["OPENAI_API_KEY"]
 
     client = QdrantClient(host="127.0.0.1", port=6333, check_compatibility=False)
@@ -414,7 +559,7 @@ def main() -> None:
 
     if skipped_no_subject:
         log.warning(
-            "Skipped %d points with no metadata.subject — run subject_backfill.py first.",
+            "Skipped %d points with no metadata.subject -- run subject_backfill.py first.",
             skipped_no_subject,
         )
 
@@ -425,7 +570,7 @@ def main() -> None:
     # --- Group by subject ACROSS namespaces ---------------------------------
     # Lineage is a property of the entity, not the namespace. The same fact often
     # lives in both global `fleet` and `fleet:{project}` (e.g. a DB path stated
-    # globally and restated under the project) — grouping by subject only lets a
+    # globally and restated under the project) -- grouping by subject only lets a
     # newer value in one namespace supersede an older value in the other. Server
     # resolution + project search already span both namespaces, so cross-ns heads
     # resolve fine.
@@ -437,6 +582,7 @@ def main() -> None:
     total_prompt_tokens = 0
     total_completion_tokens = 0
     groups_processed = 0
+    groups_skipped_stale = 0
     total_threads_found = 0
     total_superseded = 0
 
@@ -448,6 +594,18 @@ def main() -> None:
     }
 
     for subject, group in sorted(groups.items()):
+        # --- Incremental fast-path: skip groups with no recent points -------
+        # When ANY member is newer than since_ts we reprocess the WHOLE group
+        # so that old members get re-judged alongside the new one. Groups with
+        # no member newer than since_ts are left completely untouched -- their
+        # existing lineage payload is preserved as-is.
+        if since_ts is not None:
+            has_recent = any(rec["created_at"] > since_ts for rec in group)
+            if not has_recent:
+                groups_skipped_stale += 1
+                # Do NOT write any lineage for this group; leave prior values intact.
+                continue
+
         if len(group) < min_group:
             # Singletons and below-threshold groups get uniform current=True
             for rec in group:
@@ -457,9 +615,9 @@ def main() -> None:
         if len(group) > MAX_LLM_GROUP:
             # Oversized buckets (e.g. the generic 'user' subject) are too large to
             # thread meaningfully in one call and almost never hold real
-            # supersession. Mark all current and skip — do not silently truncate.
+            # supersession. Mark all current and skip -- do not silently truncate.
             log.warning(
-                "subject=%r has %d facts > MAX_LLM_GROUP=%d — marking all current, skipping judge",
+                "subject=%r has %d facts > MAX_LLM_GROUP=%d -- marking all current, skipping judge",
                 subject, len(group), MAX_LLM_GROUP,
             )
             for rec in group:
@@ -475,7 +633,7 @@ def main() -> None:
             total_completion_tokens += ct
         except Exception as exc:
             log.warning(
-                "LLM call failed for subject=%r — skipping group. Error: %s",
+                "LLM call failed for subject=%r -- skipping group. Error: %s",
                 subject, exc,
             )
             # Leave group untouched (no lineage fields written for it this run)
@@ -484,11 +642,10 @@ def main() -> None:
         # Validate coverage: all group ids must appear somewhere in threads
         group_ids = {r["id"] for r in group}
         thread_ids_flat = {tid for t in threads for tid in t}
-        missing = group_ids - thread_ids_flat
         extra = thread_ids_flat - group_ids
         if extra:
             log.warning(
-                "judge returned unknown ids for subject=%r: %s — removing from threads",
+                "judge returned unknown ids for subject=%r: %s -- removing from threads",
                 subject, extra,
             )
             threads = [[tid for tid in t if tid in group_ids] for t in threads]
@@ -497,10 +654,7 @@ def main() -> None:
         # --- Order threads and log ------------------------------------------
         for thread in threads:
             ordered = sort_thread_by_created_at(thread, id_to_record)
-            if dry_run:
-                log_thread(subject, ordered, id_to_record)
-            else:
-                log_thread(subject, ordered, id_to_record)
+            log_thread(subject, ordered, id_to_record)
 
         # --- Compute lineage ------------------------------------------------
         lineage = compute_lineage_for_group(group, threads, id_to_record)
@@ -523,20 +677,33 @@ def main() -> None:
     # --- Telemetry ----------------------------------------------------------
     push_telemetry(total_prompt_tokens, total_completion_tokens)
 
+    # --- Update state file on successful non-dry-run ------------------------
+    state_file_updated = False
+    if state_file is not None and not dry_run:
+        try:
+            _write_state_file(state_file, run_start_ts)
+            state_file_updated = True
+            log.info("State file updated: %s -> %s", state_file, run_start_ts)
+        except OSError as exc:
+            log.warning("Failed to update state file %s: %s", state_file, exc)
+
     # --- Summary ------------------------------------------------------------
     log.info(
-        "Run complete — total_points=%d  groups_processed=%d  threads_found=%d  "
-        "superseded=%d  skipped_no_subject=%d  lineage_written=%d",
+        "Run complete -- total_points=%d  groups_processed=%d  groups_skipped_stale=%d  "
+        "threads_found=%d  superseded=%d  skipped_no_subject=%d  lineage_written=%d  "
+        "state_file_updated=%s",
         len(all_points),
         groups_processed,
+        groups_skipped_stale,
         total_threads_found,
         total_superseded,
         skipped_no_subject,
         writes,
+        state_file_updated,
     )
 
     if dry_run:
-        log.info("DRY RUN — no writes made")
+        log.info("DRY RUN -- no writes made")
 
 
 if __name__ == "__main__":

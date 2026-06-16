@@ -25,7 +25,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response as StarletteResponse
 
 from fts_index import FtsIndex, rrf_merge
-from validate import detect, build_self_check
+from validate import detect, build_self_check, detect_secrets, build_secret_block
 
 logging.basicConfig(
     level=logging.INFO,
@@ -338,7 +338,20 @@ def add_memory(content: str, agent: str, project: str | None = None, metadata: d
     """
     namespace = f"{FLEET_NS}:{project}" if project else FLEET_NS
 
-    # Deterministic write guardrail — challenge only on detected ambiguity.
+    # --- Wheel 3: secret detector (NOT bypassable by self_checked) -----------
+    # Run BEFORE the vagueness guardrail so a secret is never stored even when
+    # the writing agent has pre-approved with self_checked=True.
+    # If secrets are detected: store NOTHING, log WARNING (redacted), return
+    # MEMORY_CONTAINS_SECRET.  self_checked=true has NO effect here.
+    secret_flags = detect_secrets(content)
+    if secret_flags:
+        log.warning(
+            "add_memory SECRET BLOCKED by %s ns=%s flags=%s",
+            agent, namespace, secret_flags,
+        )
+        return json.dumps(build_secret_block(secret_flags))
+
+    # --- Wheel 1: vagueness guardrail — challenge only on detected ambiguity ---
     flags = detect(content, subject)
     if flags:
         if not self_checked:
