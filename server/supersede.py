@@ -69,7 +69,7 @@ OPENAI_MODEL = "gpt-4o-mini"
 # Subject groups larger than this are skipped (all marked current) rather than
 # sent to the judge — too big for one call and almost always a generic catch-all
 # subject (e.g. 'user') with no real supersession.
-MAX_LLM_GROUP = 40
+MAX_LLM_GROUP = 80
 
 # ---------------------------------------------------------------------------
 # CLI
