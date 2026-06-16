@@ -158,3 +158,53 @@ with `include_superseded=true`.
 - **Search-only tuning (RRF weights, more recall).** Rejected: cannot compute
   supersession, aggregation, or taxonomy from cosine similarity; the answer
   ceiling is in the data model, not the ranker.
+
+---
+
+## Addendum (2026-06-16): fleet-memory is ONE lane in a federation — revises scope and #7
+
+**Trigger.** Live-testing attribute/aggregate questions ("what DB does InfraAtlas
+use?", "what DBs are used across the ai org?") exposed that we were treating
+fleet-memory as the universal knowledge store. It is not. The forward case worked
+via query-time LLM over retrieved candidates (SQLite was in the top-5 and
+extracted correctly); the aggregate case failed (recall-biased to Postgres, missed
+the SQLite outlier) — but the real lesson is that **aggregate question belongs to a
+different store entirely.** Sirchmunk (semantic code search) was overlooked.
+
+**Three sources of truth — route by which owns the answer:**
+
+| Question type | Authoritative store |
+|---|---|
+| What exists / enumerate (repos, orgs) | **Gitea** (API) |
+| What a repo uses — DB engine, stack, deps (code-derivable) | **Sirchmunk / the code** (CT336, semantic index over `/opt/source`) |
+| Why / decision / runtime / context NOT in code | **fleet-memory** |
+
+**Decisions:**
+
+1. **fleet-memory's lane is narrowed.** It owns the *why* — decisions, runtime/infra
+   facts, cross-session context that is NOT derivable from code and NOT enumerable
+   from Gitea. Do NOT store code-derivable facts (a repo's DB/stack/deps) as primary
+   truth in memory — they drift from the source. Memory may hold the *exception/
+   decision* about them ("InfraAtlas deliberately keeps SQLite, do not migrate to
+   Postgres") because that *why* is not in the code.
+2. **Multi-hop / aggregate questions are FEDERATED orchestration, not a memory
+   feature.** "What DB across the ai org" = Gitea enumerate -> Sirchmunk per-repo ->
+   LLM compose, with memory supplying only exceptions/decisions.
+3. **Revises #7 (triples / attribute dimension): largely OBVIATED.** Code is the
+   structured truth and Sirchmunk already indexes it; extracting code-derivable
+   triples into memory would duplicate and drift from the real source. Forward/
+   reverse attribute questions are served by query-time LLM over retrieved
+   candidates (verified live). A stored controlled-vocabulary attribute dimension is
+   justified ONLY for enumerate-over-facts-that-exist-solely-in-memory — rare; defer
+   until a real, frequent need appears.
+4. **New roadmap item supersedes most of #7 — a thin QUERY ROUTER (federation front
+   door):** classify the question and dispatch — enumerate -> Gitea; code attribute
+   -> Sirchmunk; why/decision -> fleet-memory; multi-hop -> orchestrate the above ->
+   LLM compose. Requires Sirchmunk wired into the agent toolset
+   (192.168.50.136:8765/mcp).
+
+**Consequence for the remaining wheels.** Because memory's lane is narrower, the
+quality wheels shrink: #5 canonicalizer, #4 dedup, #8 TTL only need to be as good as
+the narrowed *why/decision* lane requires, not universal-KB quality. #7 is retired
+in favour of the query router + Sirchmunk. #11 (health) and the source-type/recency
+trust idea (#9-lite) are unchanged and remain the cheapest next steps.
