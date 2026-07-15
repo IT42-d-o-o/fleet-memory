@@ -15,6 +15,7 @@ import os
 import sys
 import json
 import logging
+import datetime
 from typing import Any
 
 import uvicorn
@@ -26,6 +27,9 @@ from starlette.responses import Response as StarletteResponse
 
 from fts_index import FtsIndex, rrf_merge
 from validate import detect, build_self_check, detect_secrets, build_secret_block
+import authority
+import gate
+import subject_alias
 
 logging.basicConfig(
     level=logging.INFO,
@@ -315,8 +319,12 @@ def _emit_metric(text_len: int) -> None:
 
 
 # --- MCP tools -----------------------------------------------------------
+_CLAIM_TYPES = {"decision", "lesson", "fact", "preference", "prediction"}
+_WHY_REQUIRED_TYPES = {"decision", "lesson"}
+
+
 @mcp.tool()
-def add_memory(content: str, agent: str, project: str | None = None, metadata: dict[str, Any] | None = None, infer: bool = False, subject: str | None = None, self_checked: bool = False) -> str:
+def add_memory(content: str, agent: str, project: str | None = None, metadata: dict[str, Any] | None = None, infer: bool = False, subject: str | None = None, self_checked: bool = False, type: str = "fact", why: str | None = None) -> str:
     """Store a memory in the shared fleet memory.
 
     content:  the fact / decision / lesson to remember.
@@ -330,20 +338,65 @@ def add_memory(content: str, agent: str, project: str | None = None, metadata: d
               (must be explicit and present in content) and stored in metadata.
     self_checked: set True to bypass the deterministic write guardrail when you have
               confirmed the memory is self-contained despite a flag (logged as override).
+    type:     Write Contract claim type — one of
+              decision|lesson|fact|preference|prediction.
+              Optional, defaults to "fact" (existing callers that omit it are
+              unaffected). Case-insensitive, normalized on write. Stored in
+              metadata.claim_type.
+    why:      optional rationale string. REQUIRED when type is "decision" or
+              "lesson" (Write Contract rule 3) — omitting it is rejected with
+              MEMORY_NEEDS_WHY, not bypassable by self_checked (structural
+              requirement, cheap to satisfy). Stored in metadata.why AND
+              appended to the stored content ("\\n\\nWhy: <why>") so recall
+              surfaces the rationale; not required for fact/preference/prediction.
+              type="prediction": a dated, falsifiable prediction about a named
+              system. REQUIRES metadata to carry non-empty "expires_on" (ISO
+              date string, YYYY-MM-DD, must parse via date.fromisoformat) and
+              non-empty "verify_hint" (a string describing how to check the
+              prediction later) — omitting either is rejected with
+              MEMORY_PREDICTION_NEEDS_FIELDS, not bypassable by self_checked.
+              meta["status"] defaults to "open" unless the caller supplies a
+              status in metadata.
 
     Write guardrail: a deterministic detector (no LLM) screens for vague,
     context-dependent candidates. If it flags one, NOTHING is stored and a
     self_check JSON is returned — rewrite the memory self-contained, or resubmit
     unchanged with self_checked=true. Clean candidates are stored immediately.
+
+    Write CONTRACT gate (2026-07-12): after the vagueness wheel, three more
+    steps run in order — (1) Rule-8 authority cross-check against the fleet
+    registry mirror (deterministic, NOT bypassable — MEMORY_AUTHORITY_CONFLICT
+    on a hard placement contradiction), (2) an LLM quality gate (advisory,
+    bypassable with self_checked=true — MEMORY_FAILS_WRITE_CONTRACT on REJECT,
+    fails OPEN if the gate LLM is unreachable), (3) subject alias
+    canonicalization (metadata.subject set to the canonical form, original
+    preserved in metadata.raw_subject).
+
+    Write CONTRACT rules 2/3 gate (2026-07-13): a new deterministic step runs
+    right after subject alias canonicalization, before the authority check —
+    (a) `type` is normalized/validated against the enum, unknown values are
+    rejected with MEMORY_INVALID_TYPE (NOT bypassable — a typo must not
+    silently disable the rule-3 check below); (b) if type is decision/lesson
+    and `why` is empty, rejected with MEMORY_NEEDS_WHY (NOT bypassable by
+    self_checked — structural, not advisory). `why` is value-scanned by the
+    secret detector alongside content, then appended to the stored content
+    (not fed through the vagueness wheel or the LLM gate, to avoid false
+    positives on rationale prose) right before the memory.add() call.
     """
     namespace = f"{FLEET_NS}:{project}" if project else FLEET_NS
 
     # --- Wheel 3: secret detector (NOT bypassable by self_checked) -----------
     # Run BEFORE the vagueness guardrail so a secret is never stored even when
-    # the writing agent has pre-approved with self_checked=True.
+    # the writing agent has pre-approved with self_checked=True. `why` is
+    # scanned alongside content since it is a second value channel that ends
+    # up in both metadata and (later) the stored content.
     # If secrets are detected: store NOTHING, log WARNING (redacted), return
     # MEMORY_CONTAINS_SECRET.  self_checked=true has NO effect here.
-    secret_flags = detect_secrets(content)
+    secret_flags = list(detect_secrets(content))
+    if why:
+        for f in detect_secrets(why):
+            if f not in secret_flags:
+                secret_flags.append(f)
     if secret_flags:
         log.warning(
             "add_memory SECRET BLOCKED by %s ns=%s flags=%s",
@@ -360,18 +413,128 @@ def add_memory(content: str, agent: str, project: str | None = None, metadata: d
         log.warning("add_memory self_checked OVERRIDE by %s ns=%s flags=%s content=%r",
                     agent, namespace, flags, content[:160])
 
+    # --- subject alias canonicalization (Feature 4) ---------------------------
+    canonical_subject, raw_subject = subject_alias.canonicalize(subject)
+    log_subject = canonical_subject or subject
+
+    # --- Write CONTRACT rules 2/3: typed claim + why (deterministic, NOT
+    # bypassable) --------------------------------------------------------------
+    # Runs after subject validation, before the authority/LLM gates. A typo in
+    # `type` must not silently disable the rule-3 why-requirement below, so
+    # unknown values are rejected rather than coerced to "fact".
+    claim_type = (type or "fact").strip().lower()
+    if claim_type not in _CLAIM_TYPES:
+        log.info("add_memory INVALID TYPE by %s ns=%s type=%r", agent, namespace, type)
+        return json.dumps({
+            "stored": False,
+            "error": "MEMORY_INVALID_TYPE",
+            "message": f"type={type!r} is not one of {sorted(_CLAIM_TYPES)}.",
+        })
+    why_clean = why.strip() if why else ""
+    if claim_type in _WHY_REQUIRED_TYPES and not why_clean:
+        log.info("add_memory NEEDS WHY by %s ns=%s type=%s", agent, namespace, claim_type)
+        return json.dumps({
+            "stored": False,
+            "error": "MEMORY_NEEDS_WHY",
+            "message": (
+                f"type={claim_type} requires a 'why' (the reason/rationale), "
+                "per Write Contract rule 3."
+            ),
+        })
+
+    # --- prediction structural requirement (deterministic, NOT bypassable) --
+    # A prediction is only useful if it can later be checked and closed out,
+    # so metadata must carry an ISO expires_on date and a verify_hint. This
+    # mirrors the NEEDS_WHY check above and is NOT bypassable by self_checked.
+    if claim_type == "prediction":
+        pred_meta = metadata or {}
+        expires_on = str(pred_meta.get("expires_on") or "").strip()
+        verify_hint = str(pred_meta.get("verify_hint") or "").strip()
+        expires_on_valid = False
+        if expires_on:
+            try:
+                datetime.date.fromisoformat(expires_on)
+                expires_on_valid = True
+            except ValueError:
+                expires_on_valid = False
+        if not expires_on_valid or not verify_hint:
+            log.info("add_memory PREDICTION NEEDS FIELDS by %s ns=%s expires_on=%r verify_hint=%r",
+                      agent, namespace, expires_on, verify_hint)
+            return json.dumps({
+                "stored": False,
+                "error": "MEMORY_PREDICTION_NEEDS_FIELDS",
+                "message": (
+                    "type=prediction requires metadata.expires_on (ISO date "
+                    "string, YYYY-MM-DD) and metadata.verify_hint (a string "
+                    "describing how to check the prediction later)."
+                ),
+            })
+
+    # --- Rule 8: authority cross-check (deterministic, NOT bypassable) -------
+    # Runs AFTER the vagueness wheel, BEFORE the LLM gate — a hard registry
+    # contradiction is rejected outright and never reaches the (slower, best-
+    # effort) LLM call. self_checked has no effect here, mirroring the secret
+    # gate: a placement contradiction must never be stored.
+    authority_flags, authority_available = authority.check(content)
+    if authority_flags:
+        log.warning("add_memory AUTHORITY CONFLICT by %s ns=%s flags=%s", agent, namespace, authority_flags)
+        return json.dumps(authority.build_authority_block(authority_flags))
+
+    # --- LLM gate (semantic, advisory-strict, bypassable with self_checked) --
+    gate_verdict, gate_raw, gate_backend = gate.evaluate(content)
+    if gate_verdict == "reject" and not self_checked:
+        gate.append_log("rejected", log_subject, content, gate_backend)
+        log.info("add_memory LLM GATE REJECT by %s ns=%s answer=%r", agent, namespace, gate_raw)
+        return json.dumps({
+            "stored": False,
+            "error": "MEMORY_FAILS_WRITE_CONTRACT",
+            "gate_answer": gate_raw,
+            "action": (
+                "The write-contract gate judged this candidate not worth storing long-term. "
+                "Resubmit with self_checked=true to store anyway, or rewrite as a decision, "
+                "lesson, durable fact, or stable preference."
+            ),
+        })
+    if gate_verdict == "reject" and self_checked:
+        gate_meta = "bypassed"
+        log.warning("add_memory LLM GATE OVERRIDE by %s ns=%s answer=%r", agent, namespace, gate_raw)
+    elif gate_verdict == "store":
+        gate_meta = "passed"
+    else:
+        gate_meta = "skipped"
+    gate.append_log(gate_meta, log_subject, content, gate_backend)
+
     meta = dict(metadata or {})
     meta["source"] = agent
-    if subject:
-        meta.setdefault("subject", subject)
+    meta["gate"] = gate_meta
+    meta["claim_type"] = claim_type
+    if why_clean:
+        meta["why"] = why_clean
+    if claim_type == "prediction":
+        meta.setdefault("status", "open")
+    if authority_available:
+        meta["authority_checked"] = True
+    if canonical_subject:
+        meta.setdefault("subject", canonical_subject)
+        if raw_subject:
+            meta["raw_subject"] = raw_subject
+
+    # Append why to the stored content (not run through vagueness/LLM gates
+    # above — rationale prose can read like dangling reference or throwaway
+    # chatter and would false-positive there) so semantic + FTS recall surface
+    # the rationale, not just metadata. Skip if already present verbatim.
+    store_content = content
+    if why_clean and "why:" not in content.lower():
+        store_content = content.rstrip() + "\n\nWhy: " + why_clean
+
     eff_infer = infer and not KEYLESS
-    result = memory.add(content, user_id=namespace, metadata=meta, infer=eff_infer)
+    result = memory.add(store_content, user_id=namespace, metadata=meta, infer=eff_infer)
     # Mirror each stored memory into the FTS5 side index (best-effort).
     for r in (result.get("results") or []):
         if r.get("id"):
-            fts.mirror(r["id"], namespace, r.get("memory") or content, meta)
+            fts.mirror(r["id"], namespace, r.get("memory") or store_content, meta)
     _emit_metric(len(content))
-    log.info("add_memory by %s ns=%s infer=%s -> %s", agent, namespace, eff_infer, result)
+    log.info("add_memory by %s ns=%s infer=%s gate=%s -> %s", agent, namespace, eff_infer, gate_meta, result)
     return json.dumps(result, default=str)
 
 
