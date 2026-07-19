@@ -14,6 +14,7 @@ in the environment.
 import os
 import sys
 import json
+import time
 import logging
 import datetime
 from typing import Any
@@ -557,11 +558,18 @@ def search_memory(query: str, limit: int = 5, project: str | None = None,
     # Over-fetch so the supersession swap/dedup still yields up to `limit` rows.
     fetch_n = limit if include_superseded else limit * 3
 
-    # 1. semantic retrieval (Qdrant via mem0), deduped across namespaces by score
+    # 1. semantic retrieval (Qdrant via mem0), deduped across namespaces by score.
+    # Per-namespace timing: each memory.search() embeds the query remotely (one cloud
+    # RTT per namespace — the dominant, spiky cost; local Qdrant is sub-10ms), so a
+    # project-scoped search pays it twice.
     seen: set = set()
     semantic: list = []
+    vec_ms: list = []
+    t0 = time.perf_counter()
     for ns in namespaces:
+        t_ns = time.perf_counter()
         r = memory.search(query, filters={"user_id": ns}, limit=fetch_n)
+        vec_ms.append((time.perf_counter() - t_ns) * 1000)
         for item in r.get("results", []):
             if item["id"] not in seen:
                 seen.add(item["id"])
@@ -569,13 +577,22 @@ def search_memory(query: str, limit: int = 5, project: str | None = None,
     semantic.sort(key=lambda x: x.get("score", 0), reverse=True)
 
     # 2. keyword retrieval (FTS5 BM25) over the same namespaces
+    t1 = time.perf_counter()
     keyword = fts.search(query, namespaces, fetch_n)
 
     # 3. fuse with Reciprocal Rank Fusion (scale-free; no score normalization)
     merged = rrf_merge(semantic, keyword, fetch_n)
 
     # 4. resolve supersession — swap each stale hit for its current head — then trim
+    t2 = time.perf_counter()
     resolved = _resolve_supersession(merged, include_superseded)
+
+    t3 = time.perf_counter()
+    log.info(
+        "search ns=%s vec_ms=%s fts_ms=%.0f resolve_ms=%.0f total_ms=%.0f hits=%d",
+        namespaces, [round(v) for v in vec_ms],
+        (t2 - t1) * 1000, (t3 - t2) * 1000, (t3 - t0) * 1000, len(resolved[:limit]),
+    )
 
     _emit_metric(len(query))
     return json.dumps({"results": resolved[:limit]}, default=str)
