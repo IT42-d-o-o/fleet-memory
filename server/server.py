@@ -17,6 +17,7 @@ import json
 import time
 import logging
 import datetime
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import uvicorn
@@ -559,17 +560,27 @@ def search_memory(query: str, limit: int = 5, project: str | None = None,
     fetch_n = limit if include_superseded else limit * 3
 
     # 1. semantic retrieval (Qdrant via mem0), deduped across namespaces by score.
-    # Per-namespace timing: each memory.search() embeds the query remotely (one cloud
-    # RTT per namespace — the dominant, spiky cost; local Qdrant is sub-10ms), so a
-    # project-scoped search pays it twice.
-    seen: set = set()
-    semantic: list = []
-    vec_ms: list = []
-    t0 = time.perf_counter()
-    for ns in namespaces:
+    # Namespaces run concurrently: each memory.search() embeds the query remotely
+    # (one cloud RTT per namespace — the dominant, spiky cost; local Qdrant is
+    # sub-10ms), so sequential project+global searches paid that RTT twice and
+    # doubled exposure to embed-latency spikes. Dedup order stays deterministic —
+    # results are consumed in namespaces order regardless of completion order.
+    def _search_ns(ns: str) -> tuple[dict, float]:
         t_ns = time.perf_counter()
         r = memory.search(query, filters={"user_id": ns}, limit=fetch_n)
-        vec_ms.append((time.perf_counter() - t_ns) * 1000)
+        return r, (time.perf_counter() - t_ns) * 1000
+
+    t0 = time.perf_counter()
+    if len(namespaces) == 1:
+        ns_results = [_search_ns(namespaces[0])]
+    else:
+        with ThreadPoolExecutor(max_workers=len(namespaces)) as pool:
+            ns_results = list(pool.map(_search_ns, namespaces))
+    vec_ms = [ms for _, ms in ns_results]
+
+    seen: set = set()
+    semantic: list = []
+    for r, _ in ns_results:
         for item in r.get("results", []):
             if item["id"] not in seen:
                 seen.add(item["id"])
