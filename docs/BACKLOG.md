@@ -64,6 +64,20 @@ Deployed to CT356 `/opt/memory-mcp` with `.bak-alias-*` backups; verified live.
 
 ## Next up
 
+### 0. Probe autogeneration from live recall traffic
+
+Today's benchmark scores 50 hand-curated probes — a frozen sample. Industry-
+leading would be scoring what sessions *actually asked*: log every
+`search_memory` query plus whether the session subsequently cited a returned
+fact, and nightly promote high-signal query/fact pairs into the probe set. The
+recall score then tracks real workload drift instead of the curation snapshot.
+
+Build sketch: append query + top-5 result ids to a jsonl in `server.py`'s
+search handler; a reconcile step distills them into `recall_probes.json`
+entries with `expect_any` derived from cited fact ids. Open design question:
+"cited" needs a proxy signal — candidates: fact id re-surfaced in a same-day
+`add_memory` write, or explicit feedback ping from the session hook.
+
 ### 1. Wheel #4 — dedup as a reconcile-loop stage — DONE 2026-07-21
 
 Shipped as `server/dedup_stage.py`, wired as step 3 of `reconcile.sh` (nightly
