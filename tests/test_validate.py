@@ -237,9 +237,9 @@ def test_secret_vault_path_refs_allowed():
         "Gitea token is at Vault secret/infra/gitea field token",
         "Cloudflare credentials at secret/infra/cloudflare — use cf-expose skill",
         "LLM key lives at secret/ai/llm field LLM_API_KEY",
-        "Fleet memory seed at secret/Mem0",
+        "Fleet memory seed at secret/infra/memory-mcp",
         "secret/apps/infraatlas holds the seed_password field",
-        "Use secret/apps/sudreg for OIB→company lookups",
+        "Use secret/saas/sudreg for OIB→company lookups",
     ]
     for c in allowed:
         flags = detect_secrets(c)

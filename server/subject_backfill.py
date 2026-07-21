@@ -14,7 +14,7 @@ Flags:
   --dry-run   Compute and log every planned change but call NO set_payload.
   --limit N   Stop after processing N untagged points (useful for partial test runs).
 
-Vault path: secret/Mem0 field openai_api
+Vault path: secret/infra/memory-mcp field openai_api
 Vault token: /etc/memory-mcp/vault-token
 """
 
@@ -46,7 +46,7 @@ def vault_get(path, field):
     return r.stdout.strip()
 
 
-os.environ["OPENAI_API_KEY"] = vault_get("secret/Mem0", "openai_api")
+os.environ["OPENAI_API_KEY"] = vault_get("secret/infra/memory-mcp", "openai_api")
 
 from qdrant_client import QdrantClient  # noqa: E402  (after sys.path insert)
 import openai  # noqa: E402

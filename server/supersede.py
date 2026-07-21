@@ -38,7 +38,7 @@ Concurrency lock (--lock-file, default /opt/memory-mcp/.supersede.lock):
   doing any work -- the running instance covers the window. Bypass with --no-lock
   for manual / dry-run invocations.
 
-Vault path: secret/Mem0 field openai_api
+Vault path: secret/infra/memory-mcp field openai_api
 Vault token: /etc/memory-mcp/vault-token
 """
 import os
@@ -76,7 +76,7 @@ def vault_get(path, field):
     return r.stdout.strip()
 
 
-os.environ["OPENAI_API_KEY"] = vault_get("secret/Mem0", "openai_api")
+os.environ["OPENAI_API_KEY"] = vault_get("secret/infra/memory-mcp", "openai_api")
 
 from qdrant_client import QdrantClient  # noqa: E402 — must come after sys.path insert
 

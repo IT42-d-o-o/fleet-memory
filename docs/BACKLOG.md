@@ -174,7 +174,7 @@ mitigated. Revisit only if OpenAI embed latency becomes a chronic problem.
 
 ## Known drift / operational
 
-- **GitHub mirror is behind.** `secret/github api_token` is an expired classic
+- **GitHub mirror is behind.** `secret/saas/github api_token` is an expired classic
   PAT; pushes are rejected. Gitea is canonical. Needs a new PAT.
 - **CT356 holds `.bak-*` clutter** in `/opt/memory-mcp` from successive
   hand-deploys (gate, prediction, alias). Harmless, worth a sweep.
