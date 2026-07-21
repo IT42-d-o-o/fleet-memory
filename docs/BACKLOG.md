@@ -144,9 +144,13 @@ the 6-point gap is purely the retrieval layer on keyword-heavy probes, not
 first run: probes from `fleet:{project}` facts must pass `project=` like the
 session hook — without it the score was 60%, a pure namespace artifact.
 
-**Open retrieval improvement (new item):** close the 6-point gap — candidates:
-FTS query sanitation for natural-language questions, RRF weight tuning,
-hybrid k. Measurable nightly now.
+**Retrieval gap RESOLVED 2026-07-22 (commit 4d24011):** per-channel
+instrumentation traced all 8 misses to case-fragmented project namespaces
+(`project=` used raw at write+search; 152 facts invisible to their own
+sessions). Slug-normalized both entry points, healed the store
+(`scripts/heal_namespaces.py`). **Final: MCP 100% hit@5 vs baseline 90%.**
+The suspected retrieval-layer defects (FTS sanitation, RRF bias, semantic
+drift) were all red herrings — none needed fixing.
 
 ---
 
