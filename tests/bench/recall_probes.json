@@ -7,7 +7,8 @@
    "ad-it42",
    "sso_email_missing"
   ],
-  "subject": "keycloak"
+  "subject": "keycloak",
+  "project": "likvidator-stamp"
  },
  {
   "id": 2,
@@ -38,7 +39,7 @@
    "17700"
   ],
   "subject": "MilestoneEmulators",
-  "project": "pisar"
+  "project": "milestonedashboard"
  },
  {
   "id": 5,
@@ -58,8 +59,7 @@
    "infinite loop",
    "task state as DONE"
   ],
-  "subject": "aider",
-  "project": "pisar"
+  "subject": "aider"
  },
  {
   "id": 7,
@@ -98,8 +98,7 @@
   "expect_any": [
    "OpenRouter"
   ],
-  "subject": "openrouter",
-  "project": "pisar"
+  "subject": "openrouter"
  },
  {
   "id": 11,
@@ -158,7 +157,7 @@
    "Milestone Emulators -"
   ],
   "subject": "MilestoneEmulators MSI same-version upgrade",
-  "project": "it42-infra"
+  "project": "milestonedashboard"
  },
  {
   "id": 17,
@@ -199,8 +198,7 @@
    "connectors.py",
    "secrets.py"
   ],
-  "subject": "llmconnect",
-  "project": "sirchmunk"
+  "subject": "llmconnect"
  },
  {
   "id": 21,
@@ -264,7 +262,7 @@
    "uv run"
   ],
   "subject": "novita-image",
-  "project": "milestonedashboard"
+  "project": "local-ai-platform"
  },
  {
   "id": 27,
@@ -306,8 +304,7 @@
    "grafana/",
    "prometheus/"
   ],
-  "subject": "observability",
-  "project": "it42-web"
+  "subject": "observability"
  },
  {
   "id": 31,
@@ -328,7 +325,7 @@
    "10.10.20.122"
   ],
   "subject": "MilestoneLab",
-  "project": "MilestoneDashboard"
+  "project": "milestonedashboard"
  },
  {
   "id": 33,
@@ -349,7 +346,7 @@
    "first and last name fields"
   ],
   "subject": "atila-local",
-  "project": "security-scans"
+  "project": "atila"
  },
  {
   "id": 35,
@@ -359,7 +356,8 @@
    "api port 8088:80",
    "INFRA-CHECK-OK"
   ],
-  "subject": "Local infra agentic benchmark"
+  "subject": "Local infra agentic benchmark",
+  "project": "local-ai-platform"
  },
  {
   "id": 36,
@@ -379,8 +377,7 @@
    "Alerting",
    "memory-mcp"
   ],
-  "subject": "memory-mcp",
-  "project": "fleet-memory"
+  "subject": "memory-mcp"
  },
  {
   "id": 38,
@@ -411,7 +408,7 @@
    "appsettings Organization defaults"
   ],
   "subject": "configurable-organization-resolver",
-  "project": "MilestoneDashboard"
+  "project": "milestonedashboard"
  },
  {
   "id": 41,
@@ -421,7 +418,8 @@
    "2026-07-06",
    "C:\\Users\\tomis\\Projects\\ai\\SpearOfGods"
   ],
-  "subject": "SpearOfGods"
+  "subject": "SpearOfGods",
+  "project": "spearofgods"
  },
  {
   "id": 42,
@@ -469,7 +467,8 @@
    "Qdrant",
    "search_memory"
   ],
-  "subject": "search-memory"
+  "subject": "search-memory",
+  "project": "fleet-memory"
  },
  {
   "id": 47,
@@ -479,7 +478,8 @@
    "/generate",
    "192.168.50.223:8000"
   ],
-  "subject": "novita-image-backend"
+  "subject": "novita-image-backend",
+  "project": "handspeedgoodbackend"
  },
  {
   "id": 48,
@@ -488,8 +488,7 @@
    "/API/REST/v1",
    "Unknown resource: snapshots"
   ],
-  "subject": "MilestoneDashboard XProtect REST API Gateway snapshot resource",
-  "project": "milestonedashboard"
+  "subject": "MilestoneDashboard XProtect REST API Gateway snapshot resource"
  },
  {
   "id": 49,

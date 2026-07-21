@@ -389,6 +389,11 @@ def add_memory(content: str, agent: str, project: str | None = None, metadata: d
     (not fed through the vagueness wheel or the LLM gate, to avoid false
     positives on rationale prose) right before the memory.add() call.
     """
+    # Slug-normalize the project so "MilestoneDashboard" and
+    # "milestonedashboard" land in ONE namespace — unnormalized writers
+    # case-fragmented several project namespaces (found 2026-07-22 by the
+    # recall benchmark; healed by scripts/heal_namespaces, this keeps it fixed).
+    project = subject_alias.slugify(project) if project else None
     namespace = f"{FLEET_NS}:{project}" if project else FLEET_NS
 
     # --- Wheel 3: secret detector (NOT bypassable by self_checked) -----------
@@ -577,6 +582,9 @@ def search_memory(query: str, limit: int = 5, project: str | None = None,
     if not query or not query.strip():
         return json.dumps({"results": []})
 
+    # Same slug normalization as add_memory — search must resolve the same
+    # namespace a normalized write lands in.
+    project = subject_alias.slugify(project) if project else None
     namespaces = [f"{FLEET_NS}:{project}", FLEET_NS] if project else [FLEET_NS]
 
     # Over-fetch so the supersession swap/dedup still yields up to `limit` rows.
