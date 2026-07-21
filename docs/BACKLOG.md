@@ -86,9 +86,11 @@ only. Effectively dead code — this item is a rewrite, not a first build.
    numbers differ, it is a value sequence, not a duplicate — quarantine, never
    touch. This encodes the 2026-05-28 sweep lesson (14 "VERSION_CODE bumped to N"
    entries clustered as dupes; auto-deleting would have kept stale values).
-3. **LLM judge on survivors only** — same gpt-4o-mini pattern `supersede.py`
-   already uses: same claim reworded, or genuinely different facts? Cheap because
-   steps 1–2 cut the volume hard.
+3. **LLM judge on survivors only** — local gemma4-12b-qat via the gate's backend
+   routing, $0/year. Benchmarked 2026-07-21 (`tests/bench/`): 99/100 on 100
+   hand-labeled pairs, **zero false collapses** across all value-sequence and
+   near-miss traps; the one error was a missed subset-duplicate (harmless).
+   gpt-4o-mini not needed.
 4. **Collapse non-destructively.** Pick the cluster head by completeness (full
    text, has `why`, has `claim_type`) — explicitly **not** by newest timestamp,
    because transcript-miner-era `created_at` is inverted vs real event order.
