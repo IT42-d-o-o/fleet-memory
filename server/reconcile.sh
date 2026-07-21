@@ -15,6 +15,15 @@ PY="${APP_DIR}/venv/bin/python"
 
 echo "[reconcile] $(date -Is) start"
 
+# 0. Namespace self-heal: collapse any case-fragmented fleet:{project}
+#    namespaces (idempotent, no LLM, no Vault). server.py normalizes project
+#    at both entry points since 2026-07-22, but a future direct-DB writer
+#    could re-fragment -- this guard means fragmentation can never survive
+#    more than one night. Output is the audit log of anything it moved.
+"${PY}" "${APP_DIR}/heal_namespaces.py"
+hn=$?
+echo "[reconcile] $(date -Is) heal_namespaces exit=${hn}"
+
 # 1. Backfill subject on any points written since the last run (already-tagged
 #    points are skipped, so this only spends LLM calls on new memories).
 "${PY}" "${APP_DIR}/subject_backfill.py"
@@ -34,10 +43,10 @@ echo "[reconcile] $(date -Is) supersede exit=${ss}"
 dd=$?
 echo "[reconcile] $(date -Is) dedup_stage exit=${dd}"
 
-if [[ $bf -eq 0 && $ss -eq 0 && $dd -eq 0 ]]; then
+if [[ $hn -eq 0 && $bf -eq 0 && $ss -eq 0 && $dd -eq 0 ]]; then
   echo "[reconcile] $(date -Is) all stages OK"
   exit 0
 else
-  echo "[reconcile] $(date -Is) FAILURE (subject_backfill=${bf} supersede=${ss} dedup_stage=${dd})"
+  echo "[reconcile] $(date -Is) FAILURE (heal_namespaces=${hn} subject_backfill=${bf} supersede=${ss} dedup_stage=${dd})"
   exit 1
 fi
