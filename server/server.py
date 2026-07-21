@@ -323,6 +323,10 @@ def _emit_metric(text_len: int) -> None:
 # --- MCP tools -----------------------------------------------------------
 _CLAIM_TYPES = {"decision", "lesson", "fact", "preference", "prediction"}
 _WHY_REQUIRED_TYPES = {"decision", "lesson"}
+# Wheel 6: generic catch-all subjects that can never be reconciled (supersession
+# and dedup group by subject). Checked AFTER alias canonicalization, so a real
+# alias can never land here.
+_VAGUE_SUBJECTS = {"user", "system", "me", "myself", "assistant", "session", "unknown", "none"}
 
 
 @mcp.tool()
@@ -418,6 +422,25 @@ def add_memory(content: str, agent: str, project: str | None = None, metadata: d
     # --- subject alias canonicalization (Feature 4) ---------------------------
     canonical_subject, raw_subject = subject_alias.canonicalize(subject)
     log_subject = canonical_subject or subject
+
+    # --- Wheel 6: vague-subject denylist (deterministic, NOT bypassable) ------
+    # 'user'-style catch-all subjects created an unreconcilable 266-fact bucket
+    # (cleaned 2026-07-21): supersession and dedup group by subject, so a
+    # generic bucket can never be reconciled. Reject at write time; the caller
+    # must name the concrete entity (project, host, service — or 'Tomislav'
+    # for a genuine personal preference).
+    _vague = (canonical_subject or subject or "").strip().lower()
+    if _vague in _VAGUE_SUBJECTS:
+        log.info("add_memory VAGUE SUBJECT by %s ns=%s subject=%r", agent, namespace, subject)
+        return json.dumps({
+            "stored": False,
+            "error": "MEMORY_VAGUE_SUBJECT",
+            "message": (
+                f"subject={subject!r} is a generic catch-all. Name the concrete "
+                "entity the fact is about (project slug, host, service, or the "
+                "person's actual name for a preference)."
+            ),
+        })
 
     # --- Write CONTRACT rules 2/3: typed claim + why (deterministic, NOT
     # bypassable) --------------------------------------------------------------
