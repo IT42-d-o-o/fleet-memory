@@ -64,7 +64,19 @@ Deployed to CT356 `/opt/memory-mcp` with `.bak-alias-*` backups; verified live.
 
 ## Next up
 
-### 1. Wheel #4 — dedup as a reconcile-loop stage (impact 8/10)
+### 1. Wheel #4 — dedup as a reconcile-loop stage — DONE 2026-07-21
+
+Shipped as `server/dedup_stage.py`, wired as step 3 of `reconcile.sh` (nightly
+03:00 UTC timer), deployed to CT356. Judge env arrives via the
+`fleet-memory-reconcile.service.d/dedup-env.conf` drop-in (mirrors the gate's
+backend config). First full pass on live data: 2174 points, 243 groups, 4
+candidate pairs, 4 judged (all on the local primary), 4 collapsed — all four
+verified by eye as genuine rewords. 0 quarantined, 0 skipped. Metrics under
+pushgateway job `memory_dedup`; per-run report at
+`/var/lib/memory-stats/dedup-report.json`. Judge timeout is 180s (nightly batch
+must absorb a ~90s cold model load — unlike the gate's inline 5s budget). The
+`user` bucket (248 facts) exceeds DEDUP_MAX_GROUP and is skipped nightly —
+wheel #6 below unblocks it. Design notes below kept for reference.
 
 **Problem.** The store is append-only. Near-duplicate facts accumulate and crowd
 the top-5 recall slots the session hook injects on every prompt, so a session
