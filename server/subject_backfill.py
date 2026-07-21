@@ -21,7 +21,6 @@ Vault token: /etc/memory-mcp/vault-token
 import json
 import logging
 import os
-import re
 import subprocess
 import sys
 
@@ -73,50 +72,21 @@ PUSHGATEWAY = "http://192.168.50.223:9091"
 LLM_MODEL = "gpt-4o-mini"
 
 # ---------------------------------------------------------------------------
-# Alias map: {variant_slug: canonical_slug}
-# Add new entries here as new multi-name entities emerge.
+# Subject canonicalization — SHARED table, no local alias map.
+# subject_alias.py loads subject_aliases.json (same dir); add new aliases THERE.
 # ---------------------------------------------------------------------------
 
-CANONICAL_ALIASES: dict[str, list[str]] = {
-    "infraatlas":    ["infraatlas", "infra-atlas", "ct347", "ct359", "agent-atlas"],
-    "fleet-memory":  ["fleet-memory", "mem0", "ct356", "memory-mcp",
-                      "transcript-miner", "qdrant"],
-    "atila":         ["atila", "atilaapi", "atilachat", "atilaweb"],
-    "observus":      ["observus", "auditactivity", "auditactivityservice"],
-    "lexradar":      ["lexradar", "lex-radar"],
-    "reelforges":    ["reelforges", "reel-forges"],
-    "exoterria":     ["exoterria"],
-    "likvidir":      ["likvidir", "likvidator-stamp", "likvidator"],
-    "sirchmunk":     ["sirchmunk", "ct336"],
-    "proxmox":       ["proxmox", "proxmox-host", "pve"],
-    "vault":         ["vault", "hashicorp-vault", "ct316"],
-    "gitea":         ["gitea", "ct318"],
-    "grafana":       ["grafana", "ct319"],
-    "tomislav":      ["tomislav", "tomislav-balaz"],
-}
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import subject_alias  # noqa: E402
 
-# Build reverse lookup: variant_slug → canonical_slug
-_ALIAS_REVERSE: dict[str, str] = {}
-for _canonical, _variants in CANONICAL_ALIASES.items():
-    for _v in _variants:
-        _ALIAS_REVERSE[_v] = _canonical
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def slugify(text: str) -> str:
-    """Lowercase, replace non-[a-z0-9]+ runs with '-', strip leading/trailing '-'."""
-    s = text.lower()
-    s = re.sub(r"[^a-z0-9]+", "-", s)
-    return s.strip("-")
+slugify = subject_alias.slugify
 
 
 def canonical_subject(raw: str) -> str:
     """Slugify raw LLM output then map to canonical alias if known."""
     slug = slugify(raw)
-    return _ALIAS_REVERSE.get(slug, slug)
+    canonical, _ = subject_alias.canonicalize(slug)
+    return canonical or slug
 
 
 EXTRACTION_PROMPT = (

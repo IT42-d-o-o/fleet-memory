@@ -55,6 +55,11 @@ warnings.filterwarnings("ignore")
 
 sys.path.insert(0, "/opt/memory-mcp/venv/lib/python3.11/site-packages")
 
+# Shared with server.py add_memory (Feature 4, 2026-07-12) so aliased subjects
+# (e.g. "memory-mcp" / "mem0" / "ct356" -> "fleet-memory") merge into one
+# lineage thread instead of forking across their raw and canonical forms.
+import subject_alias  # noqa: E402 — must come after sys.path insert; script dir is on sys.path[0]
+
 # ---------------------------------------------------------------------------
 # Vault helper — verbatim from dedup.py
 # ---------------------------------------------------------------------------
@@ -172,12 +177,18 @@ def extract_records(all_points) -> list[dict]:
         # was written there by subject_backfill.py. Read it flat (with a legacy
         # nested fallback for safety).
         meta = p.get("metadata") or {}
+        # Alias-canonicalize defensively: most points already carry the canonical
+        # form (server.py writes it at write time), but older points predating
+        # the alias table may still hold a raw form directly -- map it here too
+        # so grouping-by-subject merges them into the same lineage thread.
+        raw_subj = p.get("subject") or meta.get("subject")
+        canonical_subj, _ = subject_alias.canonicalize(raw_subj)
         records.append({
             "id": str(pt.id),
             "content": p.get("data", "") or p.get("memory", "") or p.get("text", ""),
             "user_id": p.get("user_id", ""),
             "created_at": p.get("created_at", "") or meta.get("created_at", ""),
-            "subject": p.get("subject") or meta.get("subject"),
+            "subject": canonical_subj,
             "_payload": p,
         })
     return records
