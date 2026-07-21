@@ -116,25 +116,37 @@ only. Effectively dead code — this item is a rewrite, not a first build.
 recall miss and is undone by flipping a flag. First run ships `--dry-run` with a
 report to eyeball before it joins the loop.
 
-### 2. Wheel #6 — coarse-subject cleanup (impact 7/10)
+### 2. Wheel #6 — coarse-subject cleanup — DONE 2026-07-21 (commit 58306e0)
 
-The `user` subject bucket holds ~841 facts, largely retired-transcript-miner
-output ("User's client path perception requires explicit configuration…" — junk
-that still surfaces in live searches). A bucket that coarse cannot be reconciled:
-supersession has nothing meaningful to group, and vague facts leak into recall.
+The `user` bucket held 266 current facts (244 from the retired
+transcript-miner). `server/resubject_user_bucket.py` classified each: 17
+resubjected to real entities, 26 preferences → `tomislav`, 223 retired
+non-destructively (`retired_reason=wheel6-vague-subject`). A known-entity guard
+proved essential: unguarded, the classifier invented ~200 singleton
+micro-subjects ("gradlew", "ensuretables") — a resubject target must already
+exist as a store subject or alias canonical, else retire. Prevention:
+`server.py` now rejects vague subjects at write time (`MEMORY_VAGUE_SUBJECT`,
+deterministic, post-canonicalization, not bypassable).
 
-Work: LLM pass to re-subject what is salvageable and retire the rest; tighten the
-gate's vagueness rule so `user` / `system` / other non-entity subjects are
-rejected at write time. Shares plumbing with item 1 — do them together.
+### 3. Scored recall benchmark — DONE 2026-07-21 (commit e967271)
 
-### 3. Scored recall benchmark (impact 7/10, different kind of value)
+`server/recall_bench.py` + `tests/bench/recall_probes.json` (50 probes
+generated from live facts, curated). Nightly 05:00 UTC cron, pushgateway job
+`memory_recall`, report `/var/lib/memory-stats/recall-bench.json`. Optional
+`--baseline` arm: same facts exported to one markdown file, naive keyword
+retrieval — isolates the retrieval layer.
 
-Extend the 5-probe retrieval canary into a ~50-question probe set with expected
-answers, scored nightly, trended in Grafana. Not a daily UX change: it converts
-"is recall actually good?" from a vibe into a number, so items 1 and 2 — and any
-future embedder or retrieval change — become measurable instead of hopeful. This
-is exactly what the published-benchmark discussion above shows we cannot import
-from vendors.
+**First scored numbers: MCP 84% hit@5, markdown baseline 90%.** Read
+carefully: the baseline inherits the whole write pipeline (gate curation,
+dedup, supersession resolution — it exports only resolved current facts), so
+the 6-point gap is purely the retrieval layer on keyword-heavy probes, not
+"markdown files are as good as the memory system". Methodology trap fixed on
+first run: probes from `fleet:{project}` facts must pass `project=` like the
+session hook — without it the score was 60%, a pure namespace artifact.
+
+**Open retrieval improvement (new item):** close the 6-point gap — candidates:
+FTS query sanitation for natural-language questions, RRF weight tuning,
+hybrid k. Measurable nightly now.
 
 ---
 
