@@ -1,0 +1,515 @@
+[
+ {
+  "id": 1,
+  "question": "What are the details for the Keycloak LDAP user federation setup that was verified on June 11, 2026?",
+  "expect_any": [
+   "192.168.50.181",
+   "ad-it42",
+   "sso_email_missing"
+  ],
+  "subject": "keycloak"
+ },
+ {
+  "id": 2,
+  "question": "What reusable workflow should I use for building Windows-only .NET applications?",
+  "expect_any": [
+   "ci-dotnet-windows.yml",
+   "MilestoneDashboard.sln",
+   "vm1000-winrunner"
+  ],
+  "subject": "ci-dotnet-windows-yml",
+  "project": "it42-infra"
+ },
+ {
+  "id": 3,
+  "question": "What is the correct configuration for Playwright MCP regarding the type and port settings?",
+  "expect_any": [
+   "type: \"http\"",
+   "--port 9999"
+  ],
+  "subject": "playwright-mcp"
+ },
+ {
+  "id": 4,
+  "question": "What are the details of the MilestoneEmulators product release, including its features and deliverables?",
+  "expect_any": [
+   "2026-06-23",
+   "be55fb7",
+   "17700"
+  ],
+  "subject": "MilestoneEmulators",
+  "project": "pisar"
+ },
+ {
+  "id": 5,
+  "question": "What is the completion date for the feedback loop related to the AutoFaktur project, and what does it signify for the project phases?",
+  "expect_any": [
+   "2026-06-30",
+   "e693110"
+  ],
+  "subject": "AutoFaktur Phase E6 feedback loop",
+  "project": "pisar"
+ },
+ {
+  "id": 6,
+  "question": "What did the user find out about Aider's exit code and how did they resolve the issue?",
+  "expect_any": [
+   "exit code 0",
+   "infinite loop",
+   "task state as DONE"
+  ],
+  "subject": "aider",
+  "project": "pisar"
+ },
+ {
+  "id": 7,
+  "question": "What storage method did the user change to for handling file uploads in PostgreSQL?",
+  "expect_any": [
+   "memoryStorage",
+   "BYTEA",
+   "May 24, 2026"
+  ],
+  "subject": "multer"
+ },
+ {
+  "id": 8,
+  "question": "What are the details for the Umami access setup for the Teralab client, including user roles and email information?",
+  "expect_any": [
+   "tomislav.strupar",
+   "119a7f1b-28a6-4b86-9157-758bd5172add",
+   "524530ea-03ab-45e1-b1e4-cee6eee00ecb"
+  ],
+  "subject": "Teralab",
+  "project": "teralab-web"
+ },
+ {
+  "id": 9,
+  "question": "What was the outcome of testing the mention dropdown feature on a Huawei device?",
+  "expect_any": [
+   "bce2158",
+   "VKY-L29",
+   "button.mention-autocomplete-item"
+  ],
+  "subject": "mention-autocomplete-dropdown-clipping-bug"
+ },
+ {
+  "id": 10,
+  "question": "What are the limitations of the free version of OpenRouter regarding simultaneous operations?",
+  "expect_any": [
+   "OpenRouter"
+  ],
+  "subject": "openrouter",
+  "project": "pisar"
+ },
+ {
+  "id": 11,
+  "question": "What port is used for the Prometheus exporter after switching from Claude Code direct OTEL?",
+  "expect_any": [
+   "otel-collector"
+  ],
+  "subject": "otel-collector"
+ },
+ {
+  "id": 12,
+  "question": "What types of credentials can I use with OpenCodeConnector, and where can I get the API keys?",
+  "expect_any": [
+   "OpenCodeConnector",
+   "https://opencode.ai/auth",
+   "PKCE flow"
+  ],
+  "subject": "opencodeconnector"
+ },
+ {
+  "id": 13,
+  "question": "What steps are needed to ensure that the first interactive run of Claude on a new host doesn't require OAuth login?",
+  "expect_any": [
+   "~/.claude/.credentials.json",
+   "OAuth login",
+   "CT363"
+  ],
+  "subject": "ClaudeOAuthSync"
+ },
+ {
+  "id": 14,
+  "question": "What should I do if I encounter a compile error when returning a result from a method that uses IActionResult in an action returning Task<ActionResult<TDto>>?",
+  "expect_any": [
+   "CS0029",
+   "return (ActionResult)",
+   "ApiControllerBase.DemoWriteGuard()"
+  ],
+  "subject": "InfraAtlas ApiControllerBase"
+ },
+ {
+  "id": 15,
+  "question": "What updates are planned for the ai/secretary feature regarding multi-account support and other enhancements?",
+  "expect_any": [
+   "multi-account processing",
+   "OpenAI vision fallback",
+   "pytest warns cache path"
+  ],
+  "subject": "ai-secretary",
+  "project": "secretary"
+ },
+ {
+  "id": 16,
+  "question": "What happens if I rebuild the installer with the same version number, and how can I resolve issues with duplicate installations?",
+  "expect_any": [
+   "1.0.0",
+   "Milestone Emulators -"
+  ],
+  "subject": "MilestoneEmulators MSI same-version upgrade",
+  "project": "it42-infra"
+ },
+ {
+  "id": 17,
+  "question": "What are the guidelines for artifacts that are shared with clients or third parties regarding environment-specific information?",
+  "expect_any": [
+   "Client Deliverables & Configuration Externalization",
+   "ZERO knowledge of our environment",
+   "COMMITTED base with neutral placeholders"
+  ],
+  "subject": "Tomislav client-deliverable standard"
+ },
+ {
+  "id": 18,
+  "question": "What issues arose after the Proxmox host reboot on July 5, 2026, and how can I unseal the Vault?",
+  "expect_any": [
+   "2026-07-05",
+   "CT316",
+   "VAULT_ADDR=http://127.0.0.1:8200"
+  ],
+  "subject": "CT316"
+ },
+ {
+  "id": 19,
+  "question": "What were the results of the local tests on the Ollama model for OpenCode conducted on July 10, 2026?",
+  "expect_any": [
+   "mistral-small3.2-opencode:24b",
+   "devstral-opencode:24b",
+   "C:\\Users\\tomis\\.config\\opencode\\backups"
+  ],
+  "subject": "OpenCode local Ollama model tests",
+  "project": "local-ai-platform"
+ },
+ {
+  "id": 20,
+  "question": "What approach did the user take for managing provider credentials instead of using the standard files for centralization?",
+  "expect_any": [
+   "llmconnect",
+   "connectors.py",
+   "secrets.py"
+  ],
+  "subject": "llmconnect",
+  "project": "sirchmunk"
+ },
+ {
+  "id": 21,
+  "question": "What API does the IT42-DAEMON project need access to, and is it available for self-service?",
+  "expect_any": [
+   "Community Management API",
+   "IT42-DAEMON",
+   "unavailable for self-service"
+  ],
+  "subject": "it42-daemon",
+  "project": "linkedin-daemon"
+ },
+ {
+  "id": 22,
+  "question": "What should I do to ensure that changes to the system prompt are recognized in the agent's chat sessions?",
+  "expect_any": [
+   "/opt/prod-monitor-bot/agent/sessions.json",
+   "DEFAULT_ENV_CONTEXT",
+   "rm /opt/prod-monitor-bot/agent/sessions.json"
+  ],
+  "subject": "prod-monitor-bot"
+ },
+ {
+  "id": 23,
+  "question": "What are the two ports used by the XProtect Recording Server for client and management traffic, and how are they configured?",
+  "expect_any": [
+   "Port 9001",
+   "Port 7563",
+   "NetworkService"
+  ],
+  "subject": "milestone-xprotect-recording-server",
+  "project": "milestone-cert-manager"
+ },
+ {
+  "id": 24,
+  "question": "What components are missing for the booking module on kvalitetnaskolatenisa.com that would affect migration to a new host?",
+  "expect_any": [
+   "send_booking_reminder",
+   "send_booking_suggestion",
+   "api/services/email.py"
+  ],
+  "subject": "kvalitetnaskolatenisa.com booking-module"
+ },
+ {
+  "id": 25,
+  "question": "What is the application ID and version of the Android project located at C:\\Users\\tomis\\Projects\\ai\\AxeOfGods?",
+  "expect_any": [
+   "com.it42.axeofgods",
+   "1/0.1.0",
+   "C:\\Users\\tomis\\Projects\\ai\\AxeOfGods"
+  ],
+  "subject": "AxeOfGods",
+  "project": "axeofgods"
+ },
+ {
+  "id": 26,
+  "question": "What changes were made to the novita-image server and its configuration during the migration in July 2026?",
+  "expect_any": [
+   "2026-07-08",
+   "C:\\Users\\tomis\\source\\repos\\mcp-infra\\servers\\novita-image\\server.py",
+   "uv run"
+  ],
+  "subject": "novita-image",
+  "project": "milestonedashboard"
+ },
+ {
+  "id": 27,
+  "question": "What was the outcome of the remote operation to restart the recorder host on July 17, 2026?",
+  "expect_any": [
+   "restart-recorder-host",
+   "WIN-1TJ4RLQ0GU5",
+   "10.10.20.160"
+  ],
+  "subject": "MilestoneDashboard remote-ops",
+  "project": "milestonedashboard"
+ },
+ {
+  "id": 28,
+  "question": "What test case was added to verify the fallback behavior for unresolved hierarchy levels?",
+  "expect_any": [
+   "OrganizationResolverTests",
+   "FallbackValue",
+   "No Group"
+  ],
+  "subject": "organizationresolvertests",
+  "project": "milestonedashboard"
+ },
+ {
+  "id": 29,
+  "question": "How can I clone a private Gitea repository to a remote container without exposing my authentication token in the configuration files?",
+  "expect_any": [
+   "TOKEN@host/repo.git",
+   "GIT_ASKPASS_TOKEN=$TOK",
+   "pct push"
+  ],
+  "subject": "gitea-clone-secret-handling"
+ },
+ {
+  "id": 30,
+  "question": "How do the top-level symlinks ensure compatibility with older file paths during the reorganization of the live state?",
+  "expect_any": [
+   "/opt/observability/",
+   "grafana/",
+   "prometheus/"
+  ],
+  "subject": "observability",
+  "project": "it42-web"
+ },
+ {
+  "id": 31,
+  "question": "What updates were made to the Secretary interface in May 2026?",
+  "expect_any": [
+   "2026-05-29",
+   "src/secretary/gui.py"
+  ],
+  "subject": "secretary",
+  "project": "secretary"
+ },
+ {
+  "id": 32,
+  "question": "What are the static endpoints for the MilestoneLab recording servers and how do they connect to the management server?",
+  "expect_any": [
+   "192.168.50.113",
+   "10.10.20.160",
+   "10.10.20.122"
+  ],
+  "subject": "MilestoneLab",
+  "project": "MilestoneDashboard"
+ },
+ {
+  "id": 33,
+  "question": "What should I check if a bug report mentions a specific API endpoint that seems to be returning incorrect data?",
+  "expect_any": [
+   "/api/organization/recorders",
+   "/api/organization/summary",
+   "EngineSummaryDto"
+  ],
+  "subject": "MilestoneDashboard organization endpoints"
+ },
+ {
+  "id": 34,
+  "question": "What information is stored for the admin user in the database?",
+  "expect_any": [
+   "admin@atila.local",
+   "bcrypt hash",
+   "first and last name fields"
+  ],
+  "subject": "atila-local",
+  "project": "security-scans"
+ },
+ {
+  "id": 35,
+  "question": "What were the findings from the local infrastructure evaluation conducted on July 10, 2026, regarding the Docker configuration?",
+  "expect_any": [
+   "docker-compose.yml",
+   "api port 8088:80",
+   "INFRA-CHECK-OK"
+  ],
+  "subject": "Local infra agentic benchmark"
+ },
+ {
+  "id": 36,
+  "question": "What did the user do to handle extra spaces in DNS API tokens during saving?",
+  "expect_any": [
+   "trim whitespace",
+   "DNS API tokens",
+   "trailing newlines"
+  ],
+  "subject": "dns-api"
+ },
+ {
+  "id": 37,
+  "question": "What new contact point was set up for outage alerts in Grafana for the memory service, and what folder was created for the alert rules?",
+  "expect_any": [
+   "telegram-it42bot",
+   "Alerting",
+   "memory-mcp"
+  ],
+  "subject": "memory-mcp",
+  "project": "fleet-memory"
+ },
+ {
+  "id": 38,
+  "question": "What security measures should be taken when processing unsubscribe URLs from email headers to prevent SSRF attacks?",
+  "expect_any": [
+   "_validate_unsubscribe_url",
+   "src/ai_pa/api.py",
+   "RFC1918"
+  ],
+  "subject": "AI-PA unsubscribe SSRF guard"
+ },
+ {
+  "id": 39,
+  "question": "What is the discrepancy between the UI and the code for unlocking Blood Rival?",
+  "expect_any": [
+   "Complete 3 sessions",
+   "speedHistory.size < 3",
+   "3 local strikes"
+  ],
+  "subject": "blood-rival"
+ },
+ {
+  "id": 40,
+  "question": "What were the updates made in the first task of the configurable organization resolver?",
+  "expect_any": [
+   "OrganizationOptions defaults",
+   "OrganizationPath level models",
+   "appsettings Organization defaults"
+  ],
+  "subject": "configurable-organization-resolver",
+  "project": "MilestoneDashboard"
+ },
+ {
+  "id": 41,
+  "question": "What are the details of the standalone javelin trial application, including its location and version information?",
+  "expect_any": [
+   "SpearOfGods",
+   "2026-07-06",
+   "C:\\Users\\tomis\\Projects\\ai\\SpearOfGods"
+  ],
+  "subject": "SpearOfGods"
+ },
+ {
+  "id": 42,
+  "question": "How many places in the App.jsx file set the identity object for end-to-end encryption?",
+  "expect_any": [
+   "ensureE2eeKeys()",
+   "IndexedDB",
+   "loadE2eeIdentityFromCache()"
+  ],
+  "subject": "ensureE2eeKeys"
+ },
+ {
+  "id": 43,
+  "question": "What are the different layouts available in the Teralab web project and their design styles?",
+  "expect_any": [
+   "https://terralab.it42.org"
+  ],
+  "subject": "teralab"
+ },
+ {
+  "id": 44,
+  "question": "What changes were made to the RecorderCameraCascadeService in the recent milestone update regarding camera states?",
+  "expect_any": [
+   "50df106",
+   "DeviceHealthTransitionService.ApplyHealthState",
+   "CascadeRecorderOnlineToCameras"
+  ],
+  "subject": "RecorderCameraCascadeService"
+ },
+ {
+  "id": 45,
+  "question": "What method did the user select for compatibility with FastMCP 3.x to prevent a crash on CT414?",
+  "expect_any": [
+   "FastMCP.http_app()",
+   "AttributeError",
+   "3.2.4"
+  ],
+  "subject": "fastmcp"
+ },
+ {
+  "id": 46,
+  "question": "What should the user do before adding a threading lock in their implementation?",
+  "expect_any": [
+   "#4892",
+   "Qdrant",
+   "search_memory"
+  ],
+  "subject": "search-memory"
+ },
+ {
+  "id": 47,
+  "question": "What caused the 500 error when trying to generate images on the Windows backend, despite the health check showing everything was fine?",
+  "expect_any": [
+   "500 Internal Server Error",
+   "/generate",
+   "192.168.50.223:8000"
+  ],
+  "subject": "novita-image-backend"
+ },
+ {
+  "id": 48,
+  "question": "What resources are available for camera snapshots in the Milestone XProtect REST API?",
+  "expect_any": [
+   "/API/REST/v1",
+   "Unknown resource: snapshots"
+  ],
+  "subject": "MilestoneDashboard XProtect REST API Gateway snapshot resource",
+  "project": "milestonedashboard"
+ },
+ {
+  "id": 49,
+  "question": "What are the details of the WireGuard peer setup for the user's Asus router?",
+  "expect_any": [
+   "hetzner-relay",
+   "1D9bePnrJuHKLtbMAeUYCU8EXUmfN1DVw1nP9RD1/3M=",
+   "10.6.0.6/32"
+  ],
+  "subject": "asus"
+ },
+ {
+  "id": 50,
+  "question": "What changes were made to the Mrc-Gui.ps1 script for generating a self-signed root certificate?",
+  "expect_any": [
+   "New-RootCa",
+   "MilestoneRecorderCertManager",
+   "CN=MilestoneCA"
+  ],
+  "subject": "Mrc-Gui.ps1",
+  "project": "milestone-cert-manager"
+ }
+]
