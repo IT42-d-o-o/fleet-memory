@@ -1,0 +1,1002 @@
+[
+ {
+  "id": 1,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "Fleet memory MCP server runs on CT356 at 192.168.50.138 port 8800.",
+  "b": "The memory-mcp service is hosted on container 356, reachable at 192.168.50.138:8800.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 96.74
+ },
+ {
+  "id": 2,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "Vault is accessed via pct exec 316 because 10.10.10.107 is not routable from client networks.",
+  "b": "Because the 10.10.10.107 address cannot be reached from client LANs, Vault access goes through pct exec on container 316.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 11.94
+ },
+ {
+  "id": 3,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "Gitea org mapping: Projects/ai repos push to the ai org, Projects/repos to the repos org.",
+  "b": "Repositories under Projects/ai belong to Gitea org 'ai' and those under Projects/repos to org 'repos'.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 11.1
+ },
+ {
+  "id": 4,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "The nightly reconcile timer on CT356 runs subject backfill first, then supersession recompute.",
+  "b": "CT356's nightly reconciliation job executes subject_backfill.py followed by supersede.py.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 10.73
+ },
+ {
+  "id": 5,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "Tomislav prefers diffs shown with the Edit tool instead of full file dumps.",
+  "b": "Tomislav wants changes presented as diffs via Edit, never as whole-file dumps.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 9.57
+ },
+ {
+  "id": 6,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "The gate LLM screens every memory write for plaintext secrets and rejects with MEMORY_CONTAINS_SECRET.",
+  "b": "Every write to memory is scanned by the gate model for secrets; hits are rejected using the MEMORY_CONTAINS_SECRET error.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 10.6
+ },
+ {
+  "id": 7,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "Sirchmunk indexes only Gitea ai/* clones with a 15-minute sync lag.",
+  "b": "Only clones of ai/* repos from Gitea are indexed by Sirchmunk, and the index trails by about 15 minutes.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 11.25
+ },
+ {
+  "id": 8,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "Hetzner Proxmox node is at 88.99.146.106 with WireGuard address 10.6.0.8.",
+  "b": "The Proxmox host at Hetzner has public IP 88.99.146.106 and 10.6.0.8 on the WireGuard network.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 11.41
+ },
+ {
+  "id": 9,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "InfraAtlas deploys to CT347 using a fixed 6-step process that must not be deviated from.",
+  "b": "Deployment of InfraAtlas targets container 347 and follows an exact six-step procedure with no deviations allowed.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 10.45
+ },
+ {
+  "id": 10,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "Grafana alert 'memory gate dead' notifies the telegram-it42bot contact point.",
+  "b": "The 'memory gate dead' alert rule in Grafana sends notifications through the telegram-it42bot receiver.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 10.1
+ },
+ {
+  "id": 11,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "The transcript miner was retired on 2026-07-12; live writes are the only write path.",
+  "b": "As of 2026-07-12 the transcript-miner is decommissioned and memories are written live during sessions only.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 11.0
+ },
+ {
+  "id": 12,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "LLM telemetry pushes to the Pushgateway at 192.168.50.223:9091 under job llm_usage.",
+  "b": "Usage telemetry for LLMs is sent to job llm_usage on the pushgateway running at 192.168.50.223 port 9091.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 49.28
+ },
+ {
+  "id": 13,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "AtilaChat desktop installers must ship unconfigured; the client enters the server address on first run.",
+  "b": "Desktop builds of AtilaChat ship with no server preconfigured \u2014 customers set the server URL at first launch.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 10.35
+ },
+ {
+  "id": 14,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "The fleet registry fleet.yaml in it42-infra is the canonical inventory for hosts, services and edges.",
+  "b": "Canonical truth for hosts, services and public edges lives in it42-infra's registry file fleet.yaml.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 33.01
+ },
+ {
+  "id": 15,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "Qdrant payloads in the memory collection are flat \u2014 subject and lineage fields sit at the top level, not nested under metadata.",
+  "b": "In the memory collection, Qdrant stores subject and lineage keys directly at the payload top level rather than inside a metadata object.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 9.35
+ },
+ {
+  "id": 16,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "Session-close hook is the fast path for lineage reconcile; the nightly timer is the safety net.",
+  "b": "Lineage reconciliation runs quickly at session close, with a nightly timer acting as the fallback safety net.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 9.65
+ },
+ {
+  "id": 17,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "gpt-4o-mini clusters facts of one subject into claim threads during supersession.",
+  "b": "During the supersede step, gpt-4o-mini groups a subject's facts into threads of the same claim.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 9.37
+ },
+ {
+  "id": 18,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "Croatia reaches the Belgium LAN through WireGuard; its local network is 192.168.178.0/24.",
+  "b": "From Croatia (local subnet 192.168.178.0/24) the Belgian LAN is reached over the WireGuard tunnel.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 10.14
+ },
+ {
+  "id": 19,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "Docker tasks with no host specified run on the workstation.",
+  "b": "When no target host is given for docker work, the local workstation is assumed.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 9.08
+ },
+ {
+  "id": 20,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "New LXC containers running LLM tools must run ensure-llm-telemetry.sh as the final provisioning step.",
+  "b": "ensure-llm-telemetry.sh is the last provisioning step required on any new LXC or VM that hosts an LLM tool.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 20.43
+ },
+ {
+  "id": 21,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "The FTS keyword index for memory lives in SQLite at /opt/memory-mcp/fts.db and is fused with Qdrant results via RRF.",
+  "b": "Keyword search uses an SQLite FTS database at /opt/memory-mcp/fts.db, merged with semantic Qdrant hits using reciprocal rank fusion.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 13.07
+ },
+ {
+  "id": 22,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "Screenshots and images belong in C:\\Users\\tomis\\Pictures\\<project>.",
+  "b": "Store any screenshots or image files under the Pictures folder in a per-project subdirectory.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 15.72
+ },
+ {
+  "id": 23,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "Unauthenticated Gitea API calls silently omit private repositories.",
+  "b": "Calling the Gitea API without auth returns only public repos \u2014 private ones are silently missing.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 7.5
+ },
+ {
+  "id": 24,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "The supersede script takes a lock file so the session-close run and nightly run never overlap.",
+  "b": "A lockfile in supersede.py prevents the nightly timer and session-close reconcile from running concurrently.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 11.73
+ },
+ {
+  "id": 25,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "Backups of gate.py accumulate on CT356 because deploys are done by hand-copying files.",
+  "b": "Manual file-copy deploys leave stale gate.py backup copies lying around on container 356.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 9.89
+ },
+ {
+  "id": 26,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "LinkedIn posts are signed '\u2014 DAEMON, IT42'.",
+  "b": "Every LinkedIn post or comment carries the signature '\u2014 DAEMON, IT42'.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 24.94
+ },
+ {
+  "id": 27,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "The memory write gate rejects decision and lesson claims that lack a why rationale.",
+  "b": "Writes typed as decision or lesson are refused by the gate unless a why is attached.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 8.96
+ },
+ {
+  "id": 28,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "OpenAI embedding latency spikes are the root cause of the memory hook's occasional 3-second timeouts.",
+  "b": "The memory recall hook sometimes exceeds its 3s budget because OpenAI embedding round-trips occasionally spike.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 10.73
+ },
+ {
+  "id": 29,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "Proxmox home node SSH uses the overseer key.",
+  "b": "SSH access to the home Proxmox host authenticates with the key named overseer.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 7.56
+ },
+ {
+  "id": 30,
+  "cat": "reword",
+  "label": "duplicate",
+  "a": "Client deliverables must externalize all parameters to config and ship cleared placeholders.",
+  "b": "Anything shipped to a client has every parameter moved to config files, with placeholder values cleared of internal data.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 9.69
+ },
+ {
+  "id": 31,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "AtilaChat Android VERSION_CODE bumped to 52.",
+  "b": "AtilaChat Android VERSION_CODE bumped to 53.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 7.3
+ },
+ {
+  "id": 32,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "InfraAtlas release v1.4.0 deployed to CT347.",
+  "b": "InfraAtlas release v1.5.0 deployed to CT347.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 7.64
+ },
+ {
+  "id": 33,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "The memory collection holds 2647 points after the FTS backfill.",
+  "b": "The memory collection holds 3112 points after the FTS backfill.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.58
+ },
+ {
+  "id": 34,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "Gate primary timeout is set to 30 seconds in the systemd override.",
+  "b": "Gate primary timeout is set to 5 seconds in the systemd override.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 6.99
+ },
+ {
+  "id": 35,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "Memory hook search timeout raised to 3 seconds in memory-context.ps1.",
+  "b": "Memory hook search timeout raised to 5 seconds in memory-context.ps1.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 7.82
+ },
+ {
+  "id": 36,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "Likvidir staging database migrated to schema revision 018.",
+  "b": "Likvidir staging database migrated to schema revision 019.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.23
+ },
+ {
+  "id": 37,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "Omen workstation disk usage is at 71% of 1.9T.",
+  "b": "Omen workstation disk usage is at 86% of 1.9T.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.04
+ },
+ {
+  "id": 38,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "The dedup similarity threshold is configured at 0.85 Jaccard.",
+  "b": "The dedup similarity threshold is configured at 0.87 Jaccard.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 7.72
+ },
+ {
+  "id": 39,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "MilestoneDashboard build 2026.06.11 shipped to the NOC.",
+  "b": "MilestoneDashboard build 2026.07.02 shipped to the NOC.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 7.89
+ },
+ {
+  "id": 40,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "CT341 fallback model is qwen3:8b.",
+  "b": "CT341 fallback model is qwen3:14b.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.44
+ },
+ {
+  "id": 41,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "Booking module Stripe webhook retries are capped at 3 attempts.",
+  "b": "Booking module Stripe webhook retries are capped at 5 attempts.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 7.27
+ },
+ {
+  "id": 42,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "Fleet map artifact shows 118 vCPU allocated across the fleet.",
+  "b": "Fleet map artifact shows 124 vCPU allocated across the fleet.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.1
+ },
+ {
+  "id": 43,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "Standup email cron fires at 07:45 on the Proxmox host.",
+  "b": "Standup email cron fires at 08:00 on the Proxmox host.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.23
+ },
+ {
+  "id": 44,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "The recall probe set contains 5 canary questions.",
+  "b": "The recall probe set contains 50 canary questions.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 7.26
+ },
+ {
+  "id": 45,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "pisar HR-CIUS validator passes 41 of 44 sample invoices.",
+  "b": "pisar HR-CIUS validator passes 43 of 44 sample invoices.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 6.16
+ },
+ {
+  "id": 46,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "AtilaChat desktop installer version 0.1.34 published.",
+  "b": "AtilaChat desktop installer version 0.1.35 published.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.07
+ },
+ {
+  "id": 47,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "Qdrant snapshot backup kept for 7 days on CT356.",
+  "b": "Qdrant snapshot backup kept for 14 days on CT356.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.85
+ },
+ {
+  "id": 48,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "gate.log rotated when it exceeds 10 MB.",
+  "b": "gate.log rotated when it exceeds 50 MB.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.84
+ },
+ {
+  "id": 49,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "WireGuard tunnel MTU set to 1420 on the Hetzner peer.",
+  "b": "WireGuard tunnel MTU set to 1380 on the Hetzner peer.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.42
+ },
+ {
+  "id": 50,
+  "cat": "valueseq",
+  "label": "distinct",
+  "a": "Investment dashboard tracks 12 open option positions.",
+  "b": "Investment dashboard tracks 17 open option positions.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 7.89
+ },
+ {
+  "id": 51,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "CT356 runs the memory MCP server for the fleet.",
+  "b": "CT356's Qdrant data directory is backed up nightly by backup-qdrant.sh.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 9.25
+ },
+ {
+  "id": 52,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "Vault tokens for agents are minted with a scoped policy that excludes the github mount.",
+  "b": "Vault runs sealed after every host reboot and must be unsealed manually.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.23
+ },
+ {
+  "id": 53,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "Gitea is reachable at 192.168.50.135:3000.",
+  "b": "Gitea CI runners are self-hosted Linux with the catthehacker container image.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 45.07
+ },
+ {
+  "id": 54,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "The Omen workstation carries an RTX 5080 with 16G VRAM.",
+  "b": "The Omen workstation auto-starts Docker Desktop via an HKCU Run key.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 7.85
+ },
+ {
+  "id": 55,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "InfraAtlas uses EF Core with SQLite for persistence.",
+  "b": "InfraAtlas signs product licenses with an asymmetric key pair.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.3
+ },
+ {
+  "id": 56,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "The deploy skill bumps version, pushes to Gitea and verifies health on the target CT.",
+  "b": "The ct-new skill provisions containers with standard network, SSH and telemetry patterns.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.61
+ },
+ {
+  "id": 57,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "Sirchmunk lives on Hetzner container 736 at 10.20.0.136.",
+  "b": "Sirchmunk cannot see local uncommitted edits \u2014 Grep must be used for those.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 7.4
+ },
+ {
+  "id": 58,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "AtilaChat's server component deploys as a docker bundle.",
+  "b": "AtilaChat encrypts messages end-to-end once every chat member has published keys.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 7.61
+ },
+ {
+  "id": 59,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "Grafana runs on CT319 behind a NAT port-forward on the Proxmox host.",
+  "b": "Grafana dashboards must be verified for live data flow before any panel config is touched.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.69
+ },
+ {
+  "id": 60,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "The miner LLM client is kept self-contained in _llm.py with only an httpx dependency.",
+  "b": "The miner reads forge credentials for GitHub, GitLab and Gitea from environment variables.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 10.68
+ },
+ {
+  "id": 61,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "Fleet memory namespaces: fleet is global, fleet:{slug} is per-project.",
+  "b": "Fleet memory search merges project and global namespaces by score when project is set.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.57
+ },
+ {
+  "id": 62,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "The Belgian site runs on a Dell Inspiron gaming laptop from 2017.",
+  "b": "The Belgian LAN uses the 192.168.50.0/24 subnet.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.55
+ },
+ {
+  "id": 63,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "Likvidir uses Postgres 16 with row-level security for tenant isolation.",
+  "b": "Likvidir stores uploaded PDFs in MinIO buckets.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.05
+ },
+ {
+  "id": 64,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "The prediction ledger stores dated falsifiable predictions with an expires_on field.",
+  "b": "The reflect skill records a Q1 breakage forecast at end of session.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.68
+ },
+ {
+  "id": 65,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "qwen3-coder runs locally through opencode with a 16k context window.",
+  "b": "Haiku handles bulk mechanical edits across many simple files.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.66
+ },
+ {
+  "id": 66,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "The mail skill sends through iRedMail SMTP with the tomislav-observus credentials.",
+  "b": "The standup skill triggers the daily infra email script on the Proxmox host.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 9.26
+ },
+ {
+  "id": 67,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "pisar extracts invoice fields with a multi-provider LLM chain.",
+  "b": "pisar validates e-Ra\u010dun XML against HR-CIUS schematron rules using saxonche.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 9.35
+ },
+ {
+  "id": 68,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "CT316 hosts Vault reachable inside the NAT at 10.10.10.107:8200.",
+  "b": "A NAT port-forward exposes Vault on the Proxmox host's LAN address at port 8200.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 15.47
+ },
+ {
+  "id": 69,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "The FTS rebuild timer reconciles the keyword index against Qdrant daily at 04:00 UTC.",
+  "b": "add_memory mirrors every write into the FTS index best-effort at write time.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 9.55
+ },
+ {
+  "id": 70,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "MilestoneDashboard integrates Milestone XProtect via its SDK for camera state.",
+  "b": "MilestoneDashboard pushes real-time updates to the NOC UI over SignalR.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 9.49
+ },
+ {
+  "id": 71,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "The booking widget is vanilla JS embeddable on third-party sites.",
+  "b": "The booking backend sends confirmation emails through the notification service.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.84
+ },
+ {
+  "id": 72,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "Cloudflare tunnels expose selected services on it42.org hostnames.",
+  "b": "Cloudflare API tokens are stored in Vault and read by the cloudflare agent at runtime.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.68
+ },
+ {
+  "id": 73,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "Session transcripts live under ~/.claude/projects, one directory per working directory.",
+  "b": "The caveman skill compresses responses to roughly a quarter of normal token usage.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 7.88
+ },
+ {
+  "id": 74,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "The web-publisher agent deploys static pages to *.it42.hr subdomains on CT746.",
+  "b": "The dev-dispatcher service runs background tasks and notifies completion over Telegram.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.51
+ },
+ {
+  "id": 75,
+  "cat": "distinct",
+  "label": "distinct",
+  "a": "Exoterria is a registered project subject in the memory alias table.",
+  "b": "Reelforges has the alias reel-forges mapped in the memory alias table.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 6.99
+ },
+ {
+  "id": 76,
+  "cat": "nearmiss",
+  "label": "distinct",
+  "a": "The gate falls back to CT341 when the workstation primary is unreachable.",
+  "b": "The gate skips the workstation primary when a different model is resident, going straight to fallback.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 9.81
+ },
+ {
+  "id": 77,
+  "cat": "nearmiss",
+  "label": "distinct",
+  "a": "Fleet memory hook failures are episodic, about 4-5% of runs.",
+  "b": "Fleet memory hook failures were chronic, blocking recall for every client session.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 7.34
+ },
+ {
+  "id": 78,
+  "cat": "nearmiss",
+  "label": "distinct",
+  "a": "supersede.py recomputes the whole group when any member is newer than the since timestamp.",
+  "b": "supersede.py skips groups that contain no member newer than the since timestamp.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 31.53
+ },
+ {
+  "id": 79,
+  "cat": "nearmiss",
+  "label": "distinct",
+  "a": "The GitHub mirror push failed because the classic PAT was expired.",
+  "b": "The GitHub mirror push failed because the repository did not exist on GitHub yet.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 7.23
+ },
+ {
+  "id": 80,
+  "cat": "nearmiss",
+  "label": "distinct",
+  "a": "CT336 is the tombstoned old sirchmunk host, kept stopped as backup.",
+  "b": "CT736 is the live sirchmunk host on the Hetzner node.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 9.79
+ },
+ {
+  "id": 81,
+  "cat": "nearmiss",
+  "label": "distinct",
+  "a": "The alias table is hot-reloaded every 60 seconds without a service restart.",
+  "b": "The alias table requires a memory-mcp restart to pick up new entries.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 7.98
+ },
+ {
+  "id": 82,
+  "cat": "nearmiss",
+  "label": "distinct",
+  "a": "Authority checks reject placement facts that contradict fleet.yaml.",
+  "b": "Authority checks rewrite placement facts to match fleet.yaml before storing.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 10.6
+ },
+ {
+  "id": 83,
+  "cat": "nearmiss",
+  "label": "distinct",
+  "a": "created_at from the transcript miner is inverted relative to real event order.",
+  "b": "created_at from live session writes reflects the true time the fact was learned.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 11.34
+ },
+ {
+  "id": 84,
+  "cat": "nearmiss",
+  "label": "distinct",
+  "a": "self_checked=true bypasses only the vagueness check on memory writes.",
+  "b": "self_checked=true bypasses the secret scan on memory writes.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 12.27
+ },
+ {
+  "id": 85,
+  "cat": "nearmiss",
+  "label": "distinct",
+  "a": "The Dell host's load average sits pinned around 13.9, saturating 8 threads.",
+  "b": "The Dell host's load average dropped to 1.2 after elk-siem moved to Hetzner.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 8.32
+ },
+ {
+  "id": 86,
+  "cat": "nearmiss",
+  "label": "distinct",
+  "a": "Vault client tokens for the main session use a scoped policy without ssh hops.",
+  "b": "Vault break-glass access uses the pct exec 316 pattern from the Proxmox host.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 10.05
+ },
+ {
+  "id": 87,
+  "cat": "nearmiss",
+  "label": "distinct",
+  "a": "The e2ee upgrade keeps pre-upgrade chat history readable in plaintext.",
+  "b": "The e2ee upgrade re-encrypts pre-upgrade chat history once keys publish.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 9.11
+ },
+ {
+  "id": 88,
+  "cat": "nearmiss",
+  "label": "distinct",
+  "a": "Qdrant is innocent in hook latency \u2014 fts and supersession resolve take 30-70ms.",
+  "b": "Qdrant scroll pagination is the dominant cost in reconcile runtime.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 9.69
+ },
+ {
+  "id": 89,
+  "cat": "nearmiss",
+  "label": "distinct",
+  "a": "The workstation Ollama publishes port 11434 with restart unless-stopped.",
+  "b": "The CT341 Ollama serves as the always-on fallback for the gate.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 10.19
+ },
+ {
+  "id": 90,
+  "cat": "nearmiss",
+  "label": "distinct",
+  "a": "Push to gitea remote is required after every commit under ~/Projects.",
+  "b": "Push to github remote happens only when a valid PAT is available.",
+  "verdict": "distinct",
+  "ok": true,
+  "sec": 9.66
+ },
+ {
+  "id": 91,
+  "cat": "subset",
+  "label": "duplicate",
+  "a": "Grafana alert 'memory gate primary failover' fires when the fallback counter increases.",
+  "b": "Grafana alert 'memory gate primary failover' (uid cfs816b1wcsn4f, folder alerting, group memory-mcp) fires on increase(memory_gate_fallback_total[15m]) > 0 or memory_gate_last_backend == 1, notifying telegram-it42bot.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 22.66
+ },
+ {
+  "id": 92,
+  "cat": "subset",
+  "label": "duplicate",
+  "a": "The memory server parallelizes per-namespace semantic search.",
+  "b": "server.py search_memory runs the two namespace semantic searches concurrently in a ThreadPoolExecutor, so project-scoped search costs max of the embed round-trips instead of their sum.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 11.02
+ },
+ {
+  "id": 93,
+  "cat": "subset",
+  "label": "duplicate",
+  "a": "subject_backfill.py assigns subjects to untagged memory points.",
+  "b": "subject_backfill.py scrolls Qdrant points lacking a canonical subject, calls gpt-4o-mini to extract the entity, slugifies and aliases it, then writes metadata.subject via set_payload without re-embedding.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 12.63
+ },
+ {
+  "id": 94,
+  "cat": "subset",
+  "label": "duplicate",
+  "a": "The standup email includes a Fleet Memory health card.",
+  "b": "The daily 08:00 standup email renders a Fleet Memory card from standup.json on CT356, showing writes by source, gate backend mix and the retrieval canary result, with COLLECTOR STALE shown past 26 hours.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 12.63
+ },
+ {
+  "id": 95,
+  "cat": "subset",
+  "label": "duplicate",
+  "a": "The alias table lives in subject_aliases.json and is shared by all memory writers.",
+  "b": "subject_aliases.json in /opt/memory-mcp is the single shared alias table loaded by subject_alias.py with a 60s hot-reload cache, used by server.py, supersede.py and subject_backfill.py.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 14.97
+ },
+ {
+  "id": 96,
+  "cat": "subset",
+  "label": "duplicate",
+  "a": "AtilaChat 0.5.1 client bundles are scanned for internal values before delivery.",
+  "b": "generate-bundle.ps1 -ClientScan runs client-leak-scan.ps1 over the AtilaChat 0.5.1 bundle and fails the build when internal domains, IPs or EMU- values are found.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 12.9
+ },
+ {
+  "id": 97,
+  "cat": "subset",
+  "label": "duplicate",
+  "a": "The memory write gate uses a local Ollama model as primary.",
+  "b": "The memory write gate calls workstation Ollama gemma4-12b-qat as primary with pre-flight /api/ps routing and falls back to qwen3:8b on CT341 within 15 seconds.",
+  "verdict": "distinct",
+  "ok": false,
+  "sec": 12.95
+ },
+ {
+  "id": 98,
+  "cat": "subset",
+  "label": "duplicate",
+  "a": "Fleet memory search fuses keyword and semantic results.",
+  "b": "search_memory fuses BM25 keyword hits from SQLite FTS5 with Qdrant semantic results using reciprocal rank fusion at RRF_K=60, returning rrf_score, semantic_score and keyword_score debug fields.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 12.83
+ },
+ {
+  "id": 99,
+  "cat": "subset",
+  "label": "duplicate",
+  "a": "The Hetzner node hosts containers numbered in the 7xx range.",
+  "b": "On the Hetzner Proxmox node (hetzner-pve), containers are numbered 7xx \u2014 for example sirchmunk on CT736.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 9.94
+ },
+ {
+  "id": 100,
+  "cat": "subset",
+  "label": "duplicate",
+  "a": "Miner LLM client is self-contained to ease standalone distribution.",
+  "b": "miner/_llm.py is deliberately kept self-contained with httpx as its only dependency, avoiding external library coupling so the miner can be distributed standalone.",
+  "verdict": "duplicate",
+  "ok": true,
+  "sec": 9.97
+ }
+]
