@@ -194,6 +194,12 @@ mitigated. Revisit only if OpenAI embed latency becomes a chronic problem.
   PAT; pushes are rejected. Gitea is canonical. Needs a new PAT.
 - **CT356 holds `.bak-*` clutter** in `/opt/memory-mcp` from successive
   hand-deploys (gate, prediction, alias). Harmless, worth a sweep.
-- **Deploy path is manual** (`scp` → `pct push` → `systemctl restart`). Fine at
-  this cadence; a `server/deploy.sh` would remove the chance of pushing a subset
-  of files.
+- **Deploy path — RESOLVED 2026-07-22 (commit e10ff9b):** `scripts/deploy.sh`
+  (manifest-driven, sha-compared, backups, conditional restart) replaces the
+  manual scp routine; `scripts/check_drift.py` audits every managed file
+  against git main nightly (reconcile step 4) and pushes `memory_drift_files`.
+  Grafana rules in `Alerting/memory-mcp` → telegram-it42bot: `memory deploy
+  drift`, `memory recall degraded` (<0.9 hit@5), `memory recall bench stale`,
+  `memory reconcile stale` (both >26h). First audit proved the disease: live
+  gate.py (warm-timeout rev) and run.sh (Vault Agent flow) were unsynced —
+  reverse-synced into the repo.
