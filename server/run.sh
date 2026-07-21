@@ -1,24 +1,31 @@
 #!/bin/sh
 # memory-mcp launcher.
-#
-# Vault-integrated deploy: fetches OPENAI_API_KEY from Vault at runtime, never written to disk.
-# Standalone install: set OPENAI_API_KEY directly in memory-mcp.service or .env.
-# Ollama mode: set LLM_PROVIDER=ollama in unit — no API key needed.
+# Vault Agent (vault-agent-mem0.service) handles AppRole login + token renewal
+# and writes a live token to the tmpfs sink below. This script reads that token,
+# fetches the OpenAI key into the process env only (never to disk), drops the
+# token, then execs the server.
 set -e
 
-if [ "${LLM_PROVIDER:-openai}" = "openai" ] && [ -z "$OPENAI_API_KEY" ]; then
-    # Try Vault if token file exists
-    if [ -f /etc/memory-mcp/vault-token ]; then
-        export VAULT_ADDR=${VAULT_ADDR:?ERROR: VAULT_ADDR must be set when using vault-token}
-        VAULT_TOKEN=$(cat /etc/memory-mcp/vault-token)
-        export VAULT_TOKEN
-        OPENAI_API_KEY=$(vault kv get -field=api_key secret/memory-mcp/openai)
-        export OPENAI_API_KEY
-        unset VAULT_TOKEN
-    else
-        echo "ERROR: LLM_PROVIDER=openai but OPENAI_API_KEY not set and no vault-token found" >&2
-        exit 1
-    fi
-fi
+SINK=/run/memory-mcp/vault-token
+export VAULT_ADDR=http://10.10.10.107:8200
+
+# wait for Vault Agent to populate the sink (max 60s) - covers boot ordering
+i=0
+while [ ! -s "$SINK" ]; do
+  i=$((i + 1))
+  if [ "$i" -gt 60 ]; then
+    echo "vault-agent sink $SINK not ready after 60s" >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+VAULT_TOKEN=$(cat "$SINK")
+export VAULT_TOKEN
+
+OPENAI_API_KEY=$(vault kv get -field=openai_api secret/infra/memory-mcp)
+export OPENAI_API_KEY
+
+unset VAULT_TOKEN
 
 exec /opt/memory-mcp/venv/bin/python /opt/memory-mcp/server.py

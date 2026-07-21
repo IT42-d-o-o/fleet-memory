@@ -43,6 +43,13 @@ echo "[reconcile] $(date -Is) supersede exit=${ss}"
 dd=$?
 echo "[reconcile] $(date -Is) dedup_stage exit=${dd}"
 
+# 4. Deploy-drift audit: compare every managed file against git main (Gitea
+#    API) and push memory_drift_files to the Pushgateway. Drift fires the
+#    Grafana->Telegram alert; it is a metric, not a stage failure.
+"${PY}" "${APP_DIR}/check_drift.py"
+cd_rc=$?
+echo "[reconcile] $(date -Is) check_drift exit=${cd_rc}"
+
 if [[ $hn -eq 0 && $bf -eq 0 && $ss -eq 0 && $dd -eq 0 ]]; then
   echo "[reconcile] $(date -Is) all stages OK"
   exit 0

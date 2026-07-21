@@ -13,14 +13,19 @@ GATE_OLLAMA_FALLBACK_URL is unset, behavior is single-backend, same as before
 this change. Every verdict records which backend produced it ("primary",
 "fallback", or "skipped" if both failed).
 
-Pre-flight routing (2026-07-13 addendum): before calling primary, GET
-{GATE_OLLAMA_URL}/api/ps to see what model (if any) is already resident on
-that host. (a) our own model (GATE_LLM_MODEL) is resident -> call primary as
-usual. (b) a DIFFERENT model is resident -> skip primary entirely and go
-straight to fallback, so the gate never evicts whatever the user is running
-for their own work (no GPU thrash). (c) nothing resident, or /api/ps itself
-is unreachable/times out -> try primary as usual (pays the cold-load cost at
-most once; GATE keep_alive then holds the model warm for subsequent calls).
+Pre-flight routing (2026-07-13 addendum, revised 2026-07-17): before calling
+primary, GET {GATE_OLLAMA_URL}/api/ps to see what model (if any) is already
+resident on that host. (a) our own model (GATE_LLM_MODEL) is resident -> call
+primary with the WARM timeout (GATE_TIMEOUT_WARM, default 15s; a warm call
+measures ~6.7s end-to-end, so the flat 5s GATE_TIMEOUT failed over even
+against a healthy warm primary). (b) a DIFFERENT model is resident -> skip
+primary entirely and go straight to fallback, so the gate never evicts
+whatever the user is running for their own work (no GPU thrash). (c) nothing
+resident, or /api/ps itself is unreachable/times out -> skip primary and go
+straight to fallback: the 12B cold load is ~218s (measured 2026-07-17) so no
+sane timeout can bridge it, and trying just stalls every write against a
+sleeping workstation. Warm-up is owned by the WarmOllamaPrimary logon task
+on Omen, not by gate traffic.
 
 Metrics (2026-07-13 addendum): every gate decision increments a per-backend
 counter persisted at /var/lib/memory-stats/gate-counters.json and pushes
@@ -57,6 +62,12 @@ GATE_OLLAMA_FALLBACK_URL = os.environ.get("GATE_OLLAMA_FALLBACK_URL", "")
 GATE_LLM_MODEL_FALLBACK = os.environ.get("GATE_LLM_MODEL_FALLBACK", "")
 GATE_LOG_PATH = os.environ.get("GATE_LOG_PATH", "/opt/memory-mcp/gate.log")
 _TIMEOUT_S = float(os.environ.get("GATE_TIMEOUT", "10"))
+# Timeout used when pre-flight CONFIRMED our model is resident (warm). Measured
+# 2026-07-17: a warm gemma4-12b call from CT356 takes ~6.7s end-to-end, so the
+# 5s GATE_TIMEOUT failed over even against a healthy warm primary. The warm
+# budget only applies when /api/ps proved the model is loaded, so it cannot
+# stall on a sleeping/cold host (those paths never reach the primary call).
+_TIMEOUT_WARM_S = float(os.environ.get("GATE_TIMEOUT_WARM", "15"))
 _FALLBACK_TIMEOUT_S = float(os.environ.get("GATE_FALLBACK_TIMEOUT", "10"))
 _PREFLIGHT_TIMEOUT_S = float(os.environ.get("GATE_PREFLIGHT_TIMEOUT", "2"))
 _KEEP_ALIVE_PRIMARY = "-1m"  # primary is a personal workstation -- avoid cold reload between calls
@@ -219,7 +230,13 @@ def evaluate(content: str) -> tuple[str, str, str]:
         return "skipped", "GATE_OLLAMA_URL unset", "skipped"
 
     resident = _resident_models(GATE_OLLAMA_URL, _PREFLIGHT_TIMEOUT_S)
-    if resident and GATE_LLM_MODEL not in resident:
+    if resident and GATE_LLM_MODEL in resident:
+        # (a) our model is CONFIRMED warm -- call primary with the warm budget
+        # (a warm call measures ~6.7s; the old flat 5s failed over even then).
+        verdict, raw, transport_failed = _call_backend(
+            GATE_OLLAMA_URL, GATE_LLM_MODEL, _TIMEOUT_WARM_S, content, keep_alive=_KEEP_ALIVE_PRIMARY
+        )
+    elif resident:
         # (b) primary is busy serving a different model (and not also ours)
         # -- do not evict it.
         log.info(
@@ -228,11 +245,15 @@ def evaluate(content: str) -> tuple[str, str, str]:
         )
         verdict, raw, transport_failed = None, f"pre-flight: primary busy with {resident!r}", True
     else:
-        # (a) our model is resident (possibly alongside others), or (c)
-        # nothing resident / /api/ps unreachable -- try primary as usual.
-        verdict, raw, transport_failed = _call_backend(
-            GATE_OLLAMA_URL, GATE_LLM_MODEL, _TIMEOUT_S, content, keep_alive=_KEEP_ALIVE_PRIMARY
+        # (c) nothing resident, or /api/ps unreachable. Cold load of the 12B
+        # primary is ~218s (measured 2026-07-17) -- NO timeout can bridge it,
+        # and a sleeping Omen would stall every write for the full timeout.
+        # Straight to fallback; the WarmOllamaPrimary logon task on Omen is
+        # responsible for making the model resident again.
+        log.info(
+            "gate: pre-flight found primary cold or unreachable -- skipping primary (cold load ~218s never fits)",
         )
+        verdict, raw, transport_failed = None, "pre-flight: primary cold/unreachable", True
 
     if verdict is not None:
         _record_metric("primary")
