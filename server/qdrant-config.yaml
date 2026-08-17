@@ -1,0 +1,8 @@
+service:
+  host: 127.0.0.1
+  http_port: 6333
+  grpc_port: 6334
+storage:
+  storage_path: /opt/qdrant/storage
+  snapshots_path: /opt/qdrant/storage/snapshots
+telemetry_disabled: true

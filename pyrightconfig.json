@@ -1,0 +1,9 @@
+{
+  "include": ["server", "miner", "scripts", "tests"],
+  "exclude": ["**/__pycache__", "**/.pytest_cache", "research"],
+  "typeCheckingMode": "standard",
+  "pythonVersion": "3.11",
+  "extraPaths": ["server", "miner"],
+  "reportMissingImports": "warning",
+  "reportMissingModuleSource": "none"
+}

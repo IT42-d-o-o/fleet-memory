@@ -1,0 +1,21 @@
+# fleet-memory deploy manifest: <repo path> -> <CT356 path>
+# Read by scripts/deploy.sh (workstation push) and scripts/check_drift.py
+# (nightly drift audit on CT356). One mapping per line, '#' comments.
+server/server.py                /opt/memory-mcp/server.py
+server/gate.py                  /opt/memory-mcp/gate.py
+server/fts_index.py             /opt/memory-mcp/fts_index.py
+server/rebuild_fts.py           /opt/memory-mcp/rebuild_fts.py
+server/subject_alias.py         /opt/memory-mcp/subject_alias.py
+server/subject_aliases.json     /opt/memory-mcp/subject_aliases.json
+server/subject_backfill.py      /opt/memory-mcp/subject_backfill.py
+server/supersede.py             /opt/memory-mcp/supersede.py
+server/dedup_stage.py           /opt/memory-mcp/dedup_stage.py
+server/recall_bench.py          /opt/memory-mcp/recall_bench.py
+server/resubject_user_bucket.py /opt/memory-mcp/resubject_user_bucket.py
+server/standup_stats.py         /opt/memory-mcp/standup_stats.py
+server/validate.py              /opt/memory-mcp/validate.py
+server/run.sh                   /opt/memory-mcp/run.sh
+server/reconcile.sh             /opt/memory-mcp/reconcile.sh
+scripts/heal_namespaces.py      /opt/memory-mcp/heal_namespaces.py
+scripts/check_drift.py          /opt/memory-mcp/check_drift.py
+scripts/deploy-manifest.txt     /opt/memory-mcp/deploy-manifest.txt

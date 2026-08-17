@@ -1,0 +1,16 @@
+# Proxmox LXC workaround — AppArmor profile cannot be applied from inside an LXC namespace.
+# Without this, both `docker compose build` and `docker compose up` fail with:
+#   runc run failed: unable to apply apparmor profile
+#
+# Usage (Proxmox LXC only):
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+#   docker compose up -d
+#
+# Do NOT use on bare metal, standard VMs, or Docker Desktop — not needed there.
+services:
+  qdrant:
+    security_opt:
+      - apparmor:unconfined
+  memory-mcp:
+    security_opt:
+      - apparmor:unconfined
